@@ -40,7 +40,13 @@ from src.config_loader import (
 from src.skill_loader import SKILL_LABELS, all_skill_info, read_skill_body
 from src.writer import ARTICLE_TYPES, DEFAULT_WRITING_FOCUS
 
-from .history import list_articles, load_article, open_in_explorer, resolve_media
+from .history import (
+    list_articles,
+    load_article,
+    open_in_explorer,
+    render_markdown,
+    resolve_media,
+)
 from .jobs import JobQueue
 
 logger = logging.getLogger("blog_pipeline")
@@ -188,6 +194,8 @@ def create_app(job_queue: JobQueue = None, config: dict = None) -> Flask:
             "name": SKILL_LABELS.get("csdn", "csdn"),
             "path": path,
             "content": body,
+            # 顺手渲染成 HTML：前端没有 markdown 解析器，也不想为这一页引入一个
+            "content_html": render_markdown(body) if body else "",
             "chars": len(body),
         })
 

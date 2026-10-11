@@ -184,7 +184,7 @@ def list_articles(base_dir: str) -> list[dict]:
     return items
 
 
-def _render(text: str) -> str:
+def render_markdown(text: str) -> str:
     """把 Markdown 渲染成 HTML。"""
     try:
         import markdown
@@ -255,15 +255,15 @@ def load_article(base_dir: str, dir_name: str) -> Optional[dict]:
         "dir": dir_name,
         "title": _parse_frontmatter(article_raw).get("title") or dir_name,
         "article_raw": article_raw,
-        "article_html": _render(preview_raw),
+        "article_html": render_markdown(preview_raw),
         "selfcheck_md": selfcheck_md,
-        "selfcheck_html": _render(selfcheck_md) if selfcheck_md else "",
+        "selfcheck_html": render_markdown(selfcheck_md) if selfcheck_md else "",
         "changes_md": changes_md,
-        "changes_html": _render(changes_md) if changes_md else "",
+        "changes_html": render_markdown(changes_md) if changes_md else "",
         "outline_md": outline_md,
-        "outline_html": _render(outline_md) if outline_md else "",
+        "outline_html": render_markdown(outline_md) if outline_md else "",
         "cover_prompt_md": cover_prompt_md,
-        "cover_prompt_html": _render(cover_prompt_md) if cover_prompt_md else "",
+        "cover_prompt_html": render_markdown(cover_prompt_md) if cover_prompt_md else "",
         "cover_prompt_name": cover_prompt_path.name if cover_prompt_path else "",
         "images": images,
         "has_cover": (d / "cover.png").is_file(),

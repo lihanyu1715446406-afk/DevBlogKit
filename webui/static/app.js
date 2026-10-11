@@ -4,7 +4,10 @@ const state = {
   materials: [],      // [{path, kind}]
   jobs: new Map(),    // jobId -> {snapshot, events, streams: EventSource}
   config: null,
+  background: null,
+  articles: [],       // 历史列表（封面提示词页复用同一份）
   currentArticle: null,
+  page: "home",
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -34,7 +37,46 @@ async function api(url, options = {}) {
   return data;
 }
 
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
 function setStatus(text) { $("#status").textContent = text; }
+
+/* 轻提示。原来是 alert()，会打断操作且和整体视觉不搭；3 秒后自动收起。 */
+let toastTimer = null;
+function toast(message, kind = "info") {
+  const box = $("#toast");
+  box.textContent = message;
+  box.className = "toast " + kind;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => box.classList.add("hidden"), 3000);
+}
+
+/* 通用确认框。替代 confirm()，样式统一，也方便日后加更多说明。 */
+function confirmDialog(title, text, okLabel = "确定") {
+  return new Promise((resolve) => {
+    const box = $("#confirm");
+    $("#confirm-title").textContent = title;
+    $("#confirm-text").textContent = text || "";
+    $("#confirm-yes").textContent = okLabel;
+    box.classList.remove("hidden");
+
+    const done = (val) => {
+      box.classList.add("hidden");
+      $("#confirm-yes").removeEventListener("click", onYes);
+      $("#confirm-no").removeEventListener("click", onNo);
+      resolve(val);
+    };
+    const onYes = () => done(true);
+    const onNo = () => done(false);
+    $("#confirm-yes").addEventListener("click", onYes);
+    $("#confirm-no").addEventListener("click", onNo);
+  });
+}
 
 /* 顶部配置提醒条。没有提醒时要收起来，否则切换模型后旧的警告会一直挂着。 */
 function renderConfigWarnings(warnings) {
@@ -42,13 +84,6 @@ function renderConfigWarnings(warnings) {
   box.innerHTML = "";
   (warnings || []).forEach((w) => box.appendChild(el("div", null, "⚠️ " + w)));
   box.classList.toggle("hidden", !(warnings && warnings.length));
-}
-
-function el(tag, cls, text) {
-  const n = document.createElement(tag);
-  if (cls) n.className = cls;
-  if (text !== undefined) n.textContent = text;
-  return n;
 }
 
 const STATUS_LABEL = {
@@ -60,17 +95,29 @@ const STATUS_LABEL = {
   cancelled: "已取消",
 };
 
-/* ---------------- 标签页 ---------------- */
+/* ---------------- 页面导航 ---------------- */
 
-$$(".tab").forEach((tab) => {
-  tab.addEventListener("click", () => {
-    $$(".tab").forEach((t) => t.classList.remove("is-active"));
-    $$(".tabpane").forEach((p) => p.classList.remove("is-active"));
-    tab.classList.add("is-active");
-    $(`#pane-${tab.dataset.tab}`).classList.add("is-active");
-    if (tab.dataset.tab === "history") loadHistory();
-    if (tab.dataset.tab === "background") loadBackground();
-  });
+function showPage(name) {
+  state.page = name;
+  $$(".nav-item").forEach((n) =>
+    n.classList.toggle("is-active", n.dataset.page === name));
+  $$(".page").forEach((p) => p.classList.toggle("is-active", p.id === `page-${name}`));
+  $("#sidebar").classList.remove("open");
+  $("#nav-toggle").setAttribute("aria-expanded", "false");
+
+  if (name === "history") loadHistory();
+  if (name === "cover") loadCoverList();
+  if (name === "spec") loadSpec();
+  if (name === "settings") loadBackground();
+  if (name === "home") renderHome();
+}
+
+$$(".nav-item").forEach((item) =>
+  item.addEventListener("click", () => showPage(item.dataset.page)));
+
+$("#nav-toggle").addEventListener("click", () => {
+  const open = $("#sidebar").classList.toggle("open");
+  $("#nav-toggle").setAttribute("aria-expanded", String(open));
 });
 
 /* ---------------- 配置 ---------------- */
@@ -95,6 +142,7 @@ async function loadConfig() {
   renderConfigWarnings(data.warnings);
 
   $("#submit-hint").textContent = `输出到 ${data.output_base}`;
+  $("#tutorial-output-path").textContent = data.output_base || "output/";
   if (data.review_timeout) {
     $("#opt-review").parentElement.title =
       `勾选后先看大纲；${data.review_timeout} 秒内不确认会自动取消`;
@@ -113,7 +161,9 @@ function renderMaterials() {
     chip.appendChild(kind);
     chip.appendChild(el("span", "path", m.path));
     const del = el("button", null, "×");
+    del.type = "button";
     del.title = "移除";
+    del.setAttribute("aria-label", "移除这条材料");
     del.addEventListener("click", () => {
       state.materials.splice(i, 1);
       renderMaterials();
@@ -139,11 +189,10 @@ async function pickPath(kind) {
     });
     if (data.path) {
       // 目录选择框返回目录，文件选择框返回文件；用户取消时返回空串
-      const isDir = kind === "dir";
-      addMaterial(data.path, isDir ? "dir" : "file");
+      addMaterial(data.path, kind === "dir" ? "dir" : "file");
     }
   } catch (e) {
-    alert("打开选择框失败：" + e.message);
+    toast("打开选择框失败：" + e.message, "error");
   } finally {
     setStatus("就绪");
   }
@@ -166,7 +215,7 @@ $("#manual-path").addEventListener("keydown", (e) => {
 
 $("#submit").addEventListener("click", async () => {
   const topic = $("#topic").value.trim();
-  if (!topic) { alert("请先填写题材"); return; }
+  if (!topic) { toast("请先填写题材", "error"); $("#topic").focus(); return; }
 
   const tagsRaw = $("#tags").value.trim();
   const payload = {
@@ -179,10 +228,13 @@ $("#submit").addEventListener("click", async () => {
     fast: $("#opt-fast").checked,
     no_humanize: $("#opt-nohumanize").checked,
     no_selfcheck: $("#opt-noselfcheck").checked,
+    no_images: $("#opt-noimages").checked,
+    no_cover_prompt: $("#opt-nocover").checked,
   };
 
   const btn = $("#submit");
   btn.disabled = true;
+  btn.textContent = "提交中…";
   try {
     const data = await api("/api/jobs", {
       method: "POST",
@@ -191,15 +243,16 @@ $("#submit").addEventListener("click", async () => {
     state.materials = [];
     renderMaterials();
     $("#topic").value = "";
-    setStatus("已加入队列");
+    toast("已加入队列", "ok");
     await loadJobs();
     openStream(data.job.id);
     const node = document.querySelector(`[data-job="${data.job.id}"]`);
     if (node) node.classList.add("open");
   } catch (e) {
-    alert("提交失败：" + e.message);
+    toast("提交失败：" + e.message, "error");
   } finally {
     btn.disabled = false;
+    btn.textContent = "加入队列";
   }
 });
 
@@ -231,7 +284,6 @@ function jobNode(job) {
 async function loadJobs() {
   const data = await api("/api/jobs");
   const box = $("#jobs");
-  const existing = new Set(Array.from(box.children).map((n) => n.dataset.job));
 
   data.jobs.forEach((job) => {
     let node = box.querySelector(`[data-job="${job.id}"]`);
@@ -243,11 +295,14 @@ async function loadJobs() {
       if (!["done", "failed", "cancelled"].includes(job.status)) openStream(job.id);
     } else {
       updateJobHeader(node, job);
+      // 刷新一次操作区，取消按钮/查看按钮要跟着状态走
+      renderJobActions(node, job);
     }
     state.jobs.set(job.id, Object.assign(state.jobs.get(job.id) || {}, { snapshot: job }));
   });
 
   $("#jobs-empty").classList.toggle("hidden", data.jobs.length > 0);
+  renderHomeStatus();
 }
 
 function updateJobHeader(node, job) {
@@ -334,7 +389,10 @@ async function refreshOne(jobId) {
     }
     state.jobs.set(jobId, Object.assign(state.jobs.get(jobId) || {}, { snapshot: data.job }));
     if (["done", "failed", "cancelled"].includes(data.job.status)) closeStream(jobId);
-    if (data.job.status === "done") loadHistory();
+    if (data.job.status === "done") {
+      loadHistory();
+      renderHomeStatus();
+    }
   } catch (e) { /* 忽略 */ }
 }
 
@@ -349,12 +407,13 @@ function showReview(jobId, ev) {
   const box = el("div", "review");
   box.dataset.review = jobId;
   box.appendChild(el("h4", null, "大纲已生成，确认后继续写正文"));
-  const pre = el("pre", null, ev.outline || "");
-  box.appendChild(pre);
+  box.appendChild(el("pre", null, ev.outline || ""));
 
   const actions = el("div", "row gap");
   const go = el("button", "btn primary small", "继续写正文");
+  go.type = "button";
   const no = el("button", "btn small", "取消本次生成");
+  no.type = "button";
   go.addEventListener("click", () => confirmOutline(jobId, true, box));
   no.addEventListener("click", () => confirmOutline(jobId, false, box));
   actions.appendChild(go);
@@ -377,7 +436,7 @@ async function confirmOutline(jobId, decision, box) {
       body: JSON.stringify({ continue: decision }),
     });
   } catch (e) {
-    alert("确认失败：" + e.message);
+    toast("确认失败：" + e.message, "error");
     box.querySelectorAll("button").forEach((b) => (b.disabled = false));
   }
 }
@@ -385,32 +444,42 @@ async function confirmOutline(jobId, decision, box) {
 /* ---------------- 任务结束后的操作 ---------------- */
 
 function renderJobActions(node, job) {
+  const body = node.querySelector(".job-body");
+  if (!body) return;
   let actions = node.querySelector(".job-actions");
   if (!actions) {
     actions = el("div", "job-actions");
-    node.querySelector(".job-body").appendChild(actions);
+    body.appendChild(actions);
   }
   actions.innerHTML = "";
 
   if (job.status === "running" || job.status === "queued") {
     const cancel = el("button", "btn small", "取消");
+    cancel.type = "button";
     cancel.addEventListener("click", async () => {
       cancel.disabled = true;
       try {
         await api(`/api/jobs/${job.id}/cancel`, { method: "POST" });
-      } catch (e) { alert(e.message); }
+        toast("已请求取消，将在阶段边界生效");
+      } catch (e) { toast(e.message, "error"); }
     });
     actions.appendChild(cancel);
   }
 
+  if (job.status === "failed" && job.error) {
+    actions.appendChild(el("span", "hint", "失败原因：" + job.error));
+  }
+
   if (job.result && job.result.output_path) {
-    const dir = job.result.output_path.replace(/[\\/][^\\/]+$/, "").split(/[\\/]/).pop();
+    const dir = job.result.output_path.replace(/[\\/][^\\/]+$/, "");
     const view = el("button", "btn small", "查看文章");
-    view.addEventListener("click", () => openArticle(dir));
+    view.type = "button";
+    view.addEventListener("click", () => openArticle(dir.split(/[\\/]/).pop()));
     actions.appendChild(view);
 
     const folder = el("button", "btn small", "打开文件夹");
-    folder.addEventListener("click", () => openFolder(job.result.output_path.replace(/[\\/][^\\/]+$/, "")));
+    folder.type = "button";
+    folder.addEventListener("click", () => openFolder(dir));
     actions.appendChild(folder);
   }
 }
@@ -421,46 +490,213 @@ async function openFolder(path) {
       method: "POST",
       body: JSON.stringify({ path }),
     });
-  } catch (e) { alert("打开失败：" + e.message); }
+  } catch (e) { toast("打开失败：" + e.message, "error"); }
 }
 
-/* ---------------- 历史 ---------------- */
+/* ---------------- 历史列表 ---------------- */
 
 async function loadHistory() {
   try {
     const data = await api("/api/history");
-    const box = $("#history");
-    box.innerHTML = "";
-    $("#history-count").textContent = `共 ${data.articles.length} 篇`;
-
-    data.articles.forEach((a) => {
-      const item = el("div", "hitem");
-      item.appendChild(el("span", "h-title", a.title));
-
-      const badges = el("div", "h-badges");
-      if (a.selfcheck_ok === true) badges.appendChild(el("span", "badge ok", "自检通过"));
-      if (a.selfcheck_ok === false) badges.appendChild(el("span", "badge bad", "自检未通过"));
-      if (a.image_count > 0) badges.appendChild(el("span", "badge", `${a.image_count} 图`));
-      if (a.article_type) badges.appendChild(el("span", "badge", a.article_type));
-      item.appendChild(badges);
-
-      item.appendChild(el("span", "h-date", a.date || ""));
-      item.addEventListener("click", () => openArticle(a.dir));
-      box.appendChild(item);
-    });
-
-    $("#history-empty").classList.toggle("hidden", data.articles.length > 0);
+    state.articles = data.articles;
+    renderHistory();
+    fillHistoryFilter();
+    renderHomeRecent();
+    renderHomeStatus();
   } catch (e) {
     setStatus("加载历史失败：" + e.message);
   }
 }
 
+function fillHistoryFilter() {
+  const sel = $("#history-filter");
+  const current = sel.value;
+  const types = [...new Set(state.articles.map((a) => a.article_type).filter(Boolean))];
+  sel.innerHTML = "";
+  sel.appendChild(el("option", null, "全部类型")).value = "";
+  types.forEach((t) => {
+    const o = el("option", null, t);
+    o.value = t;
+    sel.appendChild(o);
+  });
+  sel.value = types.includes(current) ? current : "";
+}
+
+function filteredArticles() {
+  const kw = ($("#history-search").value || "").trim().toLowerCase();
+  const type = $("#history-filter").value;
+  return state.articles.filter((a) => {
+    if (type && a.article_type !== type) return false;
+    if (kw && !(a.title || "").toLowerCase().includes(kw)) return false;
+    return true;
+  });
+}
+
+function articleRow(a) {
+  const item = el("div", "hitem");
+  item.appendChild(el("span", "h-title", a.title));
+
+  const badges = el("div", "h-badges");
+  if (a.selfcheck_ok === true) badges.appendChild(el("span", "badge ok", "自检通过"));
+  if (a.selfcheck_ok === false) badges.appendChild(el("span", "badge bad", "自检未通过"));
+  if (a.has_cover_prompt) badges.appendChild(el("span", "badge", "封面提示词"));
+  if (a.image_count > 0) badges.appendChild(el("span", "badge", `${a.image_count} 图`));
+  if (a.article_type) badges.appendChild(el("span", "badge", a.article_type));
+  item.appendChild(badges);
+
+  item.appendChild(el("span", "h-date", a.date || ""));
+  item.addEventListener("click", () => openArticle(a.dir));
+  return item;
+}
+
+function renderHistory() {
+  const box = $("#history");
+  box.innerHTML = "";
+  const list = filteredArticles();
+  list.forEach((a) => box.appendChild(articleRow(a)));
+
+  const total = state.articles.length;
+  $("#history-count").textContent =
+    list.length === total ? `共 ${total} 篇` : `${list.length} / ${total} 篇`;
+  $("#history-empty").classList.toggle("hidden", total > 0);
+  $("#history-empty").textContent =
+    total === 0 ? "还没有生成过文章" : "没有匹配的文章";
+}
+
 $("#refresh-history").addEventListener("click", loadHistory);
+$("#history-search").addEventListener("input", renderHistory);
+$("#history-filter").addEventListener("change", renderHistory);
 $("#open-output").addEventListener("click", () => openFolder(""));
+
+/* ---------------- 封面提示词页 ---------------- */
+
+async function loadCoverList() {
+  try {
+    if (!state.articles.length) {
+      const data = await api("/api/history");
+      state.articles = data.articles;
+      renderHomeRecent();
+    }
+    renderCoverList();
+  } catch (e) {
+    setStatus("加载封面提示词失败：" + e.message);
+  }
+}
+
+function renderCoverList() {
+  const box = $("#cover-list");
+  box.innerHTML = "";
+  const list = state.articles.filter((a) => a.has_cover_prompt);
+  list.forEach((a) => {
+    const item = articleRow(a);
+    // 这一页点开直接落在封面提示词标签上
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openArticle(a.dir, "cover");
+    }, true);
+    box.appendChild(item);
+  });
+  $("#cover-count").textContent = list.length ? `${list.length} 篇` : "";
+  $("#cover-empty").classList.toggle("hidden", list.length > 0);
+  $("#cover-empty").textContent = state.articles.length
+    ? "已生成的文章里还没有封面提示词。生成新文章时会自动产出。"
+    : "还没有生成过文章";
+}
+
+$("#refresh-cover").addEventListener("click", async () => {
+  const data = await api("/api/history");
+  state.articles = data.articles;
+  renderCoverList();
+  renderHomeRecent();
+});
+
+/* ---------------- 写作规范页 ---------------- */
+
+let specLoaded = false;
+
+async function loadSpec(force = false) {
+  if (specLoaded && !force) return;
+  try {
+    const data = await api("/api/writing-spec");
+    const meta = $("#spec-meta");
+    meta.innerHTML = "";
+    const rows = [
+      ["规范名称", data.name],
+      ["生效文件", data.path || "（未找到）"],
+      ["正文体量", `${data.chars} 字符`],
+    ];
+    rows.forEach(([k, v]) => {
+      meta.appendChild(el("dt", null, k));
+      meta.appendChild(el("dd", null, v));
+    });
+    $("#spec-body").innerHTML = data.content_html ||
+      "<p class='empty'>没读到规范文件。检查 .claude/skills/learning-tech-blog/ 是否存在。</p>";
+    specLoaded = true;
+  } catch (e) {
+    setStatus("加载写作规范失败：" + e.message);
+  }
+}
+
+$("#refresh-spec").addEventListener("click", () => {
+  specLoaded = false;
+  loadSpec(true);
+});
+
+/* ---------------- 首页 ---------------- */
+
+function renderHomeStatus() {
+  const box = $("#home-status");
+  if (!box) return;
+  const bg = state.background;
+  const cfg = state.config;
+  if (!bg || !cfg) return;
+
+  box.innerHTML = "";
+  const rows = [
+    ["写作模型", bg.models.writing],
+    ["截图转录", bg.models.vision],
+    ["插图生成", bg.models.image === "none" ? "手动配图（不出图）" : bg.models.image],
+    ["写作规范", bg.skills[0] ? `${bg.skills[0].label}（${bg.skills[0].source_label}）` : "—"],
+    ["输出目录", cfg.output_base],
+  ];
+  rows.forEach(([k, v]) => {
+    box.appendChild(el("dt", null, k));
+    box.appendChild(el("dd", null, v || "—"));
+  });
+
+  const running = [...state.jobs.values()]
+    .filter((e) => e.snapshot && !["done", "failed", "cancelled"].includes(e.snapshot.status));
+  $("#home-queue").textContent = running.length
+    ? `队列中 ${running.length} 个任务`
+    : "队列空闲";
+}
+
+function renderHomeRecent() {
+  const box = $("#home-recent");
+  if (!box) return;
+  box.innerHTML = "";
+  const list = state.articles.slice(0, 5);
+  list.forEach((a) => box.appendChild(articleRow(a)));
+  $("#home-empty").classList.toggle("hidden", state.articles.length > 0);
+  if (state.articles.length) {
+    const n = state.articles.filter((a) => a.has_cover_prompt).length;
+    $("#quick-cover-desc").textContent = n
+      ? `${n} 篇有封面提示词`
+      : "查看文章的封面提示词";
+  }
+}
+
+$("#quick-generate").addEventListener("click", () => showPage("generate"));
+$("#quick-cover").addEventListener("click", () => showPage("cover"));
+$("#quick-output").addEventListener("click", () => openFolder(""));
+$("#home-refresh").addEventListener("click", async () => {
+  await loadHistory();
+  toast("已刷新");
+});
 
 /* ---------------- 文章详情 ---------------- */
 
-async function openArticle(dir) {
+async function openArticle(dir, tab = "article") {
   setStatus("加载文章…");
   try {
     const data = await api(`/api/history/${encodeURIComponent(dir)}`);
@@ -469,15 +705,20 @@ async function openArticle(dir) {
 
     $("#modal-title").textContent = a.title || dir;
     $("#mpane-article").innerHTML = a.article_html || "<p class='empty'>没有正文</p>";
+    $("#mpane-cover").innerHTML = a.cover_prompt_html ||
+      "<p class='empty'>这篇没有封面提示词。生成文章时如果勾了「跳过封面提示词」，就不会有。</p>";
     $("#mpane-selfcheck").innerHTML = a.selfcheck_html || "<p class='empty'>这篇没有自检报告</p>";
     $("#mpane-changes").innerHTML = a.changes_html || "<p class='empty'>这篇没有去 AI 味改动清单</p>";
     $("#mpane-outline").innerHTML = a.outline_html || "<p class='empty'>这篇没有保存大纲</p>";
     $("#mpane-raw").querySelector("pre").textContent = a.article_raw || "";
 
+    // 没有封面提示词时，复制按钮禁用，避免点了没反应还以为坏了
+    $("#modal-copy-cover").disabled = !a.cover_prompt_md;
+
     $("#modal").classList.remove("hidden");
-    switchModalTab("article");
+    switchModalTab(tab);
   } catch (e) {
-    alert("加载失败：" + e.message);
+    toast("加载失败：" + e.message, "error");
   } finally {
     setStatus("就绪");
   }
@@ -492,11 +733,10 @@ $$(".mtab").forEach((t) =>
   t.addEventListener("click", () => switchModalTab(t.dataset.mtab))
 );
 
-$("#modal-close").addEventListener("click", () =>
-  $("#modal").classList.add("hidden")
-);
+function closeModal() { $("#modal").classList.add("hidden"); }
+$("#modal-close").addEventListener("click", closeModal);
 $("#modal").addEventListener("click", (e) => {
-  if (e.target === $("#modal")) $("#modal").classList.add("hidden");
+  if (e.target === $("#modal")) closeModal();
 });
 
 $("#modal-folder").addEventListener("click", () => {
@@ -505,32 +745,42 @@ $("#modal-folder").addEventListener("click", () => {
 
 $("#modal-copy").addEventListener("click", async () => {
   if (!state.currentArticle) return;
-  try {
-    await navigator.clipboard.writeText(state.currentArticle.article_raw);
-    setStatus("已复制 Markdown");
-  } catch (e) {
-    alert("复制失败：" + e.message);
-  }
+  await copyText(state.currentArticle.article_raw, "已复制文章 Markdown");
 });
 
-/* ---------------- 写作背景 ---------------- */
+$("#modal-copy-cover").addEventListener("click", async () => {
+  if (!state.currentArticle) return;
+  await copyText(state.currentArticle.cover_prompt_md, "已复制封面提示词");
+});
+
+async function copyText(text, okMessage) {
+  if (!text) { toast("没有可复制的内容", "error"); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(okMessage, "ok");
+  } catch (e) {
+    toast("复制失败：" + e.message + "（可手动选中文本复制）", "error");
+  }
+}
+
+/* ---------------- 设置与帮助 ---------------- */
 
 let authorFields = [];
 
 async function loadBackground() {
   try {
     const data = await api("/api/background");
+    state.background = data;
     authorFields = data.author_fields || [];
-
-    $("#tutorial-output-path").textContent = data.output_base || "output/";
 
     renderSkills(data.skills);
     renderTypeList(data.article_types);
     renderStages(data.stages);
     renderAuthorForm(data.author);
     renderModels(data);
+    renderHomeStatus();
   } catch (e) {
-    setStatus("加载写作背景失败：" + e.message);
+    setStatus("加载设置失败：" + e.message);
   }
 }
 
@@ -596,10 +846,8 @@ function renderModels(data) {
     ["插图生成", data.models.image === "none" ? "手动配图（none）" : data.models.image],
   ];
   rows.forEach(([k, v]) => {
-    const dt = el("dt", null, k);
-    const dd = el("dd", null, v || "—");
-    box.appendChild(dt);
-    box.appendChild(dd);
+    box.appendChild(el("dt", null, k));
+    box.appendChild(el("dd", null, v || "—"));
   });
   $("#writing-focus").textContent = data.writing_focus || "";
   renderLlmSwitch(data.llm);
@@ -653,14 +901,18 @@ async function switchLlmProvider(provider, btn) {
     renderLlmSwitch(data.llm);
     renderConfigWarnings(data.warnings);
     const target = (data.llm.providers || []).find((p) => p.key === provider);
-    setStatus(
+    const okKey = target && target.api_key_configured;
+    toast(
       `写作模型已切换为 ${data.llm.label}（${data.llm.model}）` +
-        (target && target.api_key_configured ? "" : " —— 但 API key 还没配")
+        (okKey ? "" : " —— 但 API key 还没配"),
+      okKey ? "ok" : "error"
     );
     loadBackground(); // 把「模型配置」那几行也刷新掉
   } catch (e) {
-    setStatus("切换失败：" + e.message);
+    toast("切换失败：" + e.message, "error");
     if (btn) btn.disabled = false;
+  } finally {
+    setStatus("就绪");
   }
 }
 
@@ -722,8 +974,9 @@ async function saveAuthor() {
     $("#author-preview").textContent =
       data.author_prompt_preview || "（字段全空，不会注入）";
     setTimeout(() => { $("#author-hint").textContent = ""; }, 3000);
+    toast("写作者背景已保存", "ok");
   } catch (e) {
-    alert("保存失败：" + e.message);
+    toast("保存失败：" + e.message, "error");
   } finally {
     btn.disabled = false;
   }
@@ -731,24 +984,48 @@ async function saveAuthor() {
 
 $("#save-author").addEventListener("click", saveAuthor);
 
-$("#clear-author").addEventListener("click", () => {
+// 清空会直接写盘，先确认一次，避免误点把填过的背景清掉
+$("#clear-author").addEventListener("click", async () => {
+  const filled = Object.values(collectAuthor()).some((v) => v);
+  if (filled) {
+    const ok = await confirmDialog(
+      "清空写作者背景",
+      "会把四个字段都清空并立即保存到 data/writer_profile.json。清空后文章按默认方式写。",
+      "清空并保存"
+    );
+    if (!ok) return;
+  }
   $$("#author-form input").forEach((i) => { i.value = ""; });
-  saveAuthor();
+  await saveAuthor();
 });
 
 $("#refresh-background").addEventListener("click", loadBackground);
+
+/* ---------------- 键盘 ---------------- */
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!$("#confirm").classList.contains("hidden")) {
+    $("#confirm-no").click();
+    return;
+  }
+  if (!$("#modal").classList.contains("hidden")) closeModal();
+});
 
 /* ---------------- 启动 ---------------- */
 
 (async function init() {
   try {
     await loadConfig();
-    await loadBackground();   // 教程页要用到输出目录，背景页也用同一份数据
+    await loadBackground();   // 设置页与首页共用这份数据
+    await loadHistory();      // 首页「最近生成」和历史页共用
     await loadJobs();
     // 队列里可能有未完成的任务，刷新一次状态
     for (const id of state.jobs.keys()) refreshOne(id);
+    renderHomeStatus();
   } catch (e) {
     setStatus("初始化失败：" + e.message);
+    toast("初始化失败：" + e.message, "error");
   }
   // 兜底轮询，防止 SSE 掉线后漏掉状态变化
   setInterval(loadJobs, 15000);

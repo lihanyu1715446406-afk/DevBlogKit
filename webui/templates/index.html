@@ -8,280 +8,364 @@
 </head>
 <body>
 
-<header class="topbar">
-  <div class="brand">博客生成器</div>
-  <nav class="tabs">
-    <button class="tab is-active" data-tab="generate">生成</button>
-    <button class="tab" data-tab="history">历史文章</button>
-    <button class="tab" data-tab="tutorial">使用教程</button>
-    <button class="tab" data-tab="background">写作背景</button>
-  </nav>
-  <div class="status" id="status">就绪</div>
-</header>
+<div class="app">
 
-<div id="config-warnings" class="warnings hidden"></div>
+  <!-- ==================== 侧边导航 ==================== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="side-head">
+      <span class="brand">博客生成器</span>
+      <button class="icon-btn nav-toggle" id="nav-toggle" type="button"
+              aria-label="展开导航" aria-expanded="false">☰</button>
+    </div>
+    <nav class="nav" id="nav" aria-label="主导航">
+      <button class="nav-item is-active" data-page="home" type="button">首页</button>
+      <button class="nav-item" data-page="generate" type="button">生成文章</button>
+      <button class="nav-item" data-page="history" type="button">历史文章</button>
+      <button class="nav-item" data-page="cover" type="button">封面提示词</button>
+      <button class="nav-item" data-page="spec" type="button">写作规范</button>
+      <button class="nav-item" data-page="settings" type="button">设置与帮助</button>
+    </nav>
+    <div class="side-foot">
+      <span class="status" id="status" role="status">就绪</span>
+    </div>
+  </aside>
 
-<!-- ==================== 生成 ==================== -->
-<main class="tabpane is-active" id="pane-generate">
+  <!-- ==================== 主内容区 ==================== -->
+  <main class="main">
+    <div id="config-warnings" class="warnings hidden" role="alert"></div>
 
-  <section class="card">
-    <h2>新文章</h2>
+    <!-- ---------- 首页 ---------- -->
+    <section class="page is-active" id="page-home">
+      <header class="page-head">
+        <h1>博客生成器</h1>
+        <p class="note">输入一个题材，自动产出结构化的技术博客：判型 → 大纲 → 正文 → 去 AI 味 → 自检 → 封面提示词。图片由你手动生成，脚本只给提示词。</p>
+      </header>
 
-    <label class="field">
-      <span class="label">题材 <em>*</em></span>
-      <input id="topic" type="text" placeholder="例如：RabbitMQ 入门：同步调用与异步调用">
-    </label>
-
-    <div class="field">
-      <span class="label">材料（可选）<small>笔记文件或截图目录，会自动判型为课程笔记文</small></span>
-      <div id="materials" class="materials"></div>
-      <div class="row gap">
-        <button class="btn ghost" id="add-file">+ 选笔记文件</button>
-        <button class="btn ghost" id="add-dir">+ 选截图目录</button>
-        <input id="manual-path" type="text" placeholder="或直接粘贴路径后回车" class="grow">
+      <div class="grid-cards">
+        <button class="quick" id="quick-generate" type="button">
+          <span class="quick-title">开始写一篇</span>
+          <span class="quick-desc">填题材，加入队列</span>
+        </button>
+        <button class="quick" id="quick-cover" type="button">
+          <span class="quick-title">封面提示词</span>
+          <span class="quick-desc" id="quick-cover-desc">查看文章的封面提示词</span>
+        </button>
+        <button class="quick" id="quick-output" type="button">
+          <span class="quick-title">打开输出目录</span>
+          <span class="quick-desc">在文件管理器里看全部产物</span>
+        </button>
       </div>
-    </div>
 
-    <div class="grid2">
-      <label class="field">
-        <span class="label">分类</span>
-        <input id="category" type="text" placeholder="留空用配置里的默认值">
-      </label>
-      <label class="field">
-        <span class="label">标签</span>
-        <input id="tags" type="text" placeholder="逗号分隔，如：RabbitMQ,MQ">
-      </label>
-    </div>
-
-    <div class="grid2">
-      <label class="field">
-        <span class="label">文章类型</span>
-        <select id="article-type"></select>
-      </label>
-      <div class="field">
-        <span class="label">选项</span>
-        <div class="checks">
-          <label><input type="checkbox" id="opt-review"> 先确认大纲</label>
-          <label><input type="checkbox" id="opt-fast"> 跳过大纲</label>
-          <label><input type="checkbox" id="opt-nohumanize"> 跳过去 AI 味</label>
-          <label><input type="checkbox" id="opt-noselfcheck"> 跳过自检</label>
+      <section class="card">
+        <div class="row between">
+          <h2>运行状态</h2>
+          <span class="hint" id="home-queue"></span>
         </div>
-      </div>
-    </div>
+        <dl class="deflist" id="home-status"></dl>
+      </section>
 
-    <div class="row">
-      <button class="btn primary" id="submit">加入队列</button>
-      <span class="hint" id="submit-hint"></span>
-    </div>
-  </section>
+      <section class="card">
+        <div class="row between">
+          <h2>最近生成</h2>
+          <button class="btn ghost small" id="home-refresh" type="button">刷新</button>
+        </div>
+        <div id="home-recent" class="history"></div>
+        <p class="empty hidden" id="home-empty">还没有生成过文章</p>
+      </section>
+    </section>
 
-  <section class="card">
-    <div class="row between">
-      <h2>任务队列</h2>
-      <button class="btn ghost small" id="refresh-jobs">刷新</button>
-    </div>
-    <div id="jobs" class="jobs"></div>
-    <p class="empty" id="jobs-empty">还没有任务</p>
-  </section>
+    <!-- ---------- 生成文章 ---------- -->
+    <section class="page" id="page-generate">
+      <section class="card">
+        <h2>新文章</h2>
 
-</main>
+        <label class="field">
+          <span class="label">题材 <em>*</em></span>
+          <input id="topic" type="text" placeholder="例如：RabbitMQ 入门：同步调用与异步调用">
+        </label>
 
-<!-- ==================== 历史 ==================== -->
-<main class="tabpane" id="pane-history">
-  <section class="card">
-    <div class="row between">
-      <h2>历史文章 <small id="history-count"></small></h2>
-      <div class="row gap">
-        <button class="btn ghost small" id="refresh-history">刷新</button>
-        <button class="btn ghost small" id="open-output">打开输出目录</button>
-      </div>
-    </div>
-    <div id="history" class="history"></div>
-    <p class="empty" id="history-empty">还没有生成过文章</p>
-  </section>
-</main>
+        <div class="field">
+          <span class="label">材料（可选）<small>笔记文件或截图目录，会自动判型为课程笔记文</small></span>
+          <div id="materials" class="materials"></div>
+          <div class="row gap">
+            <button class="btn ghost" id="add-file" type="button">+ 选笔记文件</button>
+            <button class="btn ghost" id="add-dir" type="button">+ 选截图目录</button>
+            <input id="manual-path" type="text" placeholder="或直接粘贴路径后回车" class="grow">
+          </div>
+        </div>
 
-<!-- ==================== 使用教程 ==================== -->
-<main class="tabpane" id="pane-tutorial">
+        <div class="grid2">
+          <label class="field">
+            <span class="label">分类</span>
+            <input id="category" type="text" placeholder="留空用配置里的默认值">
+          </label>
+          <label class="field">
+            <span class="label">标签</span>
+            <input id="tags" type="text" placeholder="逗号分隔，如：RabbitMQ,MQ">
+          </label>
+        </div>
 
-  <section class="card">
-    <h2>三步上手</h2>
-    <ol class="steps">
-      <li><b>填题材</b>：一句话描述你要写什么，例如「RabbitMQ 入门：同步调用与异步调用」。</li>
-      <li><b>给材料（可选）</b>：点「选笔记文件」传 .md/.txt，或点「选截图目录」传课程截图。
-        有材料会自动判成课程笔记文，没有就按知识点文写。也可以直接把路径粘进输入框按回车。</li>
-      <li><b>加入队列</b>：点按钮提交，任务在后台依次跑。日志实时滚动，跑完可以查看文章或打开输出文件夹。</li>
-    </ol>
-  </section>
+        <div class="grid2">
+          <label class="field">
+            <span class="label">文章类型</span>
+            <select id="article-type"></select>
+          </label>
+          <div class="field">
+            <span class="label">选项</span>
+            <div class="checks">
+              <label><input type="checkbox" id="opt-review"> 先确认大纲</label>
+              <label><input type="checkbox" id="opt-fast"> 跳过大纲</label>
+              <label><input type="checkbox" id="opt-nohumanize"> 跳过去 AI 味</label>
+              <label><input type="checkbox" id="opt-noselfcheck"> 跳过自检</label>
+              <label><input type="checkbox" id="opt-noimages"> 跳过插图</label>
+              <label><input type="checkbox" id="opt-nocover"> 跳过封面提示词</label>
+            </div>
+          </div>
+        </div>
 
-  <section class="card">
-    <h2>四种文章类型</h2>
-    <p class="note">不选就用「自动」：带材料判成课程笔记文，不带材料判成知识点文。</p>
-    <dl class="deflist">
-      <dt>知识点文</dt>
-      <dd>围绕一个概念、机制、注解、API 或报错讲透。按使用场景 → 核心概念 → 最小代码 → 执行流程 → 常见坑与排查 → 验证方式组织。</dd>
-      <dt>课程笔记文</dt>
-      <dd>以你给的笔记和截图内容为边界展开，一级知识点保持材料里的顺序，材料里没有的主题不写。</dd>
-      <dt>项目功能文</dt>
-      <dd>围绕一个功能走完整闭环：功能目标 → 接口与入参 → Service 处理 → 持久化 → 验证与常见失败点。</dd>
-    </dl>
-  </section>
+        <div class="row">
+          <button class="btn primary" id="submit" type="button">加入队列</button>
+          <span class="hint" id="submit-hint"></span>
+        </div>
+      </section>
 
-  <section class="card">
-    <h2>选项说明</h2>
-    <dl class="deflist">
-      <dt>先确认大纲</dt>
-      <dd>写完大纲先停下来，等你在页面上点「继续写正文」或「取消」。
-        默认 600 秒不确认就自动取消。<b>注意：队列是顺序执行的，一篇卡在确认上，后面的任务也会一起等。</b></dd>
-      <dt>跳过大纲</dt>
-      <dd>不先出大纲，直接写正文，快一点但结构可能差一些。</dd>
-      <dt>跳过去 AI 味</dt>
-      <dd>不改写，直接输出初稿，方便你看模型原本的表达。</dd>
-      <dt>跳过自检</dt>
-      <dd>不做交付前检查。自检会数格式标记、量前言长度、扫禁用句式，不合格自动回喂重写一次。</dd>
-    </dl>
-  </section>
+      <section class="card">
+        <div class="row between">
+          <h2>任务队列</h2>
+          <button class="btn ghost small" id="refresh-jobs" type="button">刷新</button>
+        </div>
+        <div id="jobs" class="jobs"></div>
+        <p class="empty" id="jobs-empty">还没有任务</p>
+      </section>
+    </section>
 
-  <section class="card">
-    <h2>队列与取消</h2>
-    <ul class="bullets">
-      <li>可以连续提交多篇，后台<b>顺序执行</b>，不会同时写两篇。</li>
-      <li><b>取消在阶段边界生效</b>：正在飞的模型调用中断不了，点了取消要等当前阶段跑完；排队中的任务立刻取消。</li>
-      <li>关掉页面不影响已经提交的任务，它会在后台跑完。重新打开页面任务还在列表里。</li>
-      <li>同名同日的文章不会互相覆盖，第二个会自动加 <code>-2</code> 后缀。</li>
-    </ul>
-  </section>
+    <!-- ---------- 历史文章 ---------- -->
+    <section class="page" id="page-history">
+      <section class="card">
+        <div class="row between">
+          <h2>历史文章 <small id="history-count"></small></h2>
+          <div class="row gap">
+            <button class="btn ghost small" id="refresh-history" type="button">刷新</button>
+            <button class="btn ghost small" id="open-output" type="button">打开输出目录</button>
+          </div>
+        </div>
+        <div class="row gap filter-row">
+          <input id="history-search" type="search" class="grow" placeholder="搜索标题…">
+          <select id="history-filter">
+            <option value="">全部类型</option>
+          </select>
+        </div>
+        <div id="history" class="history"></div>
+        <p class="empty" id="history-empty">还没有生成过文章</p>
+      </section>
+    </section>
 
-  <section class="card">
-    <h2>每篇会产出什么</h2>
-    <p class="note">输出在 <code id="tutorial-output-path">output/</code> 下的一级目录里：</p>
-    <dl class="deflist">
-      <dt><code>index.md</code></dt>
-      <dd>最终文章，可以直接复制到 CSDN。</dd>
-      <dt><code>selfcheck.md</code></dt>
-      <dd>交付前自检报告：格式标记数量、前言字数、命中的问题。</dd>
-      <dt><code>humanize_changes.md</code></dt>
-      <dd>去 AI 味阶段改了什么。</dd>
-      <dt><code>outline.md</code></dt>
-      <dd>大纲和插图计划，含封面建议。</dd>
-    </dl>
-  </section>
+    <!-- ---------- 封面提示词 ---------- -->
+    <section class="page" id="page-cover">
+      <section class="card">
+        <div class="row between">
+          <h2>封面提示词 <small id="cover-count"></small></h2>
+          <button class="btn ghost small" id="refresh-cover" type="button">刷新</button>
+        </div>
+        <p class="note">
+          每篇文章定稿后会生成一份中文提示词，直接复制到 ChatGPT ImageGen、即梦、Midjourney 等工具出图。
+          <b>脚本不出图、不调用任何图片生成接口。</b>
+        </p>
+        <div id="cover-list" class="history"></div>
+        <p class="empty" id="cover-empty">还没有生成过封面提示词</p>
+      </section>
+    </section>
 
-  <section class="card">
-    <h2>配图怎么办</h2>
-    <p class="note">
-      当前是<b>手动配图</b>模式，不自动出图。文章里每个插图位置会留一条配图建议：
-    </p>
-    <pre class="snippet">&gt; 📷 **配图建议：** 同步调用链路示意，从支付服务依次串起用户服务、交易服务……
+    <!-- ---------- 写作规范 ---------- -->
+    <section class="page" id="page-spec">
+      <section class="card">
+        <div class="row between">
+          <h2>写作规范</h2>
+          <button class="btn ghost small" id="refresh-spec" type="button">刷新</button>
+        </div>
+        <p class="note">
+          下面是<b>实际生效</b>的规范原文。写文章时脚本把同一份文件注入模型请求，
+          Claude Code 也把它当 Skill 加载——改这一份，两边同时生效。
+        </p>
+        <dl class="deflist" id="spec-meta"></dl>
+        <details class="preview-block">
+          <summary>规范原文</summary>
+          <div class="markdown-body" id="spec-body"></div>
+        </details>
+        <p class="note">
+          想改写作风格/结构/技术要求，直接编辑上面路径里的文件。改完刷新本页即可看到。
+          完整的修改说明见「设置与帮助」。
+        </p>
+      </section>
+    </section>
+
+    <!-- ---------- 设置与帮助 ---------- -->
+    <section class="page" id="page-settings">
+
+      <section class="card">
+        <h2>模型配置</h2>
+        <p class="note">
+          写作模型负责所有「生成文字」的环节：正文、去 AI 味、封面提示词。
+          切换会写回 <code>config.yaml</code> 的 <code>llm.provider</code>，下一个任务生效。
+          截图转录是独立配置的，不受这里影响。
+        </p>
+        <div class="llm-switch" id="llm-switch">
+          <span class="label">写作模型</span>
+          <div class="seg" id="llm-provider-btns"></div>
+          <span class="hint" id="llm-switch-hint"></span>
+        </div>
+        <dl class="deflist" id="model-list"></dl>
+      </section>
+
+      <section class="card">
+        <div class="row between">
+          <h2>写作 skill</h2>
+          <button class="btn ghost small" id="refresh-background" type="button">刷新</button>
+        </div>
+        <p class="note">
+          正文和去 AI 味是两套独立规则，分别读下面两个 skill 的真实文件。
+          读不到时会自动回退到 <code>prompts/</code> 下的蒸馏副本。
+        </p>
+        <div id="skill-list" class="skill-list"></div>
+      </section>
+
+      <section class="card">
+        <h2>写作者背景</h2>
+        <p class="note">
+          这段信息会以「轻度参考」的方式注入写作提示词：只在题材相关时影响举例和侧重。
+          <b>留空则完全不注入</b>，文章按默认方式写。
+        </p>
+        <div id="author-form" class="author-form"></div>
+        <div class="row gap">
+          <button class="btn primary" id="save-author" type="button">保存</button>
+          <button class="btn ghost" id="clear-author" type="button">清空</button>
+          <span class="hint" id="author-hint"></span>
+        </div>
+        <details class="preview-block">
+          <summary>预览注入提示词的片段</summary>
+          <pre class="snippet" id="author-preview"></pre>
+        </details>
+      </section>
+
+      <section class="card">
+        <h2>文章类型判定</h2>
+        <div id="type-list" class="type-list"></div>
+      </section>
+
+      <section class="card">
+        <h2>写作取向</h2>
+        <p class="note">
+          注入写作提示词，决定文章怎么取舍。不预设固定的读者水平，按题材灵活判断。
+          要调就在 <code>config.yaml</code> 的 <code>content.writing_focus</code> 里改。
+        </p>
+        <pre class="snippet" id="writing-focus"></pre>
+      </section>
+
+      <section class="card">
+        <h2>流水线阶段</h2>
+        <ol class="stages" id="stage-list"></ol>
+      </section>
+
+      <section class="card">
+        <h2>使用说明</h2>
+        <ol class="steps">
+          <li><b>填题材</b>：一句话描述你要写什么。</li>
+          <li><b>给材料（可选）</b>：点「选笔记文件」传 .md/.txt，或点「选截图目录」传课程截图。
+            有材料会自动判成课程笔记文，没有就按知识点文写。</li>
+          <li><b>加入队列</b>：任务在后台依次跑，日志实时滚动。</li>
+        </ol>
+        <dl class="deflist">
+          <dt>先确认大纲</dt>
+          <dd>写完大纲先停下来，等你在页面上点「继续写正文」或「取消」。<b>队列是顺序执行的，一篇卡在确认上，后面的任务也会一起等。</b></dd>
+          <dt>跳过大纲</dt>
+          <dd>不先出大纲，直接写正文，快一点但结构可能差一些。</dd>
+          <dt>跳过去 AI 味 / 跳过自检 / 跳过插图 / 跳过封面提示词</dt>
+          <dd>分别跳过对应阶段。跳过自检意味着不做格式门禁检查；跳过封面提示词则不产出封面提示词文件。</dd>
+        </dl>
+        <ul class="bullets">
+          <li>可以连续提交多篇，后台<b>顺序执行</b>，不会同时写两篇。</li>
+          <li><b>取消在阶段边界生效</b>：正在飞的模型调用中断不了，点了取消要等当前阶段跑完。</li>
+          <li>关掉页面不影响已经提交的任务。同名同日的文章不会互相覆盖，第二个自动加 <code>-2</code> 后缀。</li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>每篇产出什么</h2>
+        <p class="note">输出在 <code id="tutorial-output-path">output/</code> 下的一级目录里：</p>
+        <dl class="deflist">
+          <dt><code>index.md</code></dt>
+          <dd>最终文章。</dd>
+          <dt><code>自检报告 / 去 AI 味改动 / 大纲</code></dt>
+          <dd>分别是 selfcheck.md、humanize_changes.md、outline.md。</dd>
+          <dt><code>标题.cover_prompt.md</code></dt>
+          <dd>封面提示词（含风格选择依据、可直接复制的提示词、质量检查结论）。</dd>
+        </dl>
+      </section>
+
+      <section class="card">
+        <h2>配图怎么办</h2>
+        <p class="note">当前是<b>手动配图</b>模式，不自动出图。文章里每个插图位置会留一条配图建议：</p>
+        <pre class="snippet">&gt; 📷 **配图建议：** 同步调用链路示意，从支付服务依次串起用户服务、交易服务……
 &gt; *（请手动配图）*</pre>
-    <p class="note">
-      照着描述找图或截图，把引用块替换成 <code>![说明](图片文件名)</code> 即可。
-      想改成自动出图，改 <code>config.yaml</code> 里的 <code>image.provider</code>。
-    </p>
-  </section>
+        <p class="note">
+          照着描述找图或截图，把引用块替换成 <code>![说明](图片文件名)</code> 即可。
+          封面同理：复制封面提示词到出图工具生成，再放进文章目录。
+        </p>
+      </section>
 
-  <section class="card">
-    <h2>习惯命令行的话</h2>
-    <p class="note">网页界面和命令行共用同一套流水线，效果一样。</p>
-    <pre class="snippet">python run.py "RabbitMQ 入门" -m ./笔记.md -m ./截图目录 --review
+      <section class="card">
+        <h2>习惯命令行的话</h2>
+        <p class="note">网页界面和命令行共用同一套流水线，效果一样。</p>
+        <pre class="snippet">python run.py "RabbitMQ 入门" -m ./笔记.md -m ./截图目录 --review
 python run.py "Redis 为什么快" --fast --no-images</pre>
-  </section>
+      </section>
 
-</main>
-
-<!-- ==================== 写作背景 ==================== -->
-<main class="tabpane" id="pane-background">
-
-  <section class="card">
-    <div class="row between">
-      <h2>写作 skill</h2>
-      <button class="btn ghost small" id="refresh-background">刷新</button>
-    </div>
-    <p class="note">
-      正文和去 AI 味是两套独立规则，分别读下面两个 skill 的真实文件。
-      读不到时会自动回退到 <code>prompts/</code> 下的蒸馏副本。
-    </p>
-    <div id="skill-list" class="skill-list"></div>
-  </section>
-
-  <section class="card">
-    <h2>写作者背景</h2>
-    <p class="note">
-      这段信息会以「轻度参考」的方式注入写作提示词：只在题材相关时影响举例和侧重。
-      <b>留空则完全不注入</b>，文章按默认方式写。
-    </p>
-    <div id="author-form" class="author-form"></div>
-    <div class="row gap">
-      <button class="btn primary" id="save-author">保存</button>
-      <button class="btn ghost" id="clear-author">清空</button>
-      <span class="hint" id="author-hint"></span>
-    </div>
-    <details class="preview-block">
-      <summary>预览注入提示词的片段</summary>
-      <pre class="snippet" id="author-preview"></pre>
-    </details>
-  </section>
-
-  <section class="card">
-    <h2>文章类型判定</h2>
-    <div id="type-list" class="type-list"></div>
-  </section>
-
-  <section class="card">
-    <h2>流水线阶段</h2>
-    <ol class="stages" id="stage-list"></ol>
-  </section>
-
-  <section class="card">
-    <h2>写作取向</h2>
-    <p class="note">
-      注入写作提示词，决定文章怎么取舍。不预设固定的读者水平，按题材灵活判断。
-      要调就在 <code>config.yaml</code> 的 <code>content.writing_focus</code> 里改。
-    </p>
-    <pre class="snippet" id="writing-focus"></pre>
-  </section>
-
-  <section class="card">
-    <h2>模型配置</h2>
-    <p class="note">
-      写作模型负责所有「生成文字」的环节：正文、去 AI 味、封面提示词。
-      切换会写回 <code>config.yaml</code> 的 <code>llm.provider</code>，下一个任务生效。
-      截图转录是独立配置的，不受这里影响。
-    </p>
-    <div class="llm-switch" id="llm-switch">
-      <span class="label">写作模型</span>
-      <div class="seg" id="llm-provider-btns"></div>
-      <span class="hint" id="llm-switch-hint"></span>
-    </div>
-    <dl class="deflist" id="model-list"></dl>
-  </section>
-
-</main>
+    </section>
+  </main>
+</div>
 
 <!-- ==================== 文章详情弹层 ==================== -->
-<div class="modal hidden" id="modal">
+<div class="modal hidden" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
   <div class="modal-box">
     <div class="modal-head">
       <h3 id="modal-title">文章</h3>
       <div class="row gap">
-        <button class="btn ghost small" id="modal-copy">复制 Markdown</button>
-        <button class="btn ghost small" id="modal-folder">打开文件夹</button>
-        <button class="btn ghost small" id="modal-close">关闭</button>
+        <button class="btn ghost small" id="modal-copy" type="button">复制 Markdown</button>
+        <button class="btn ghost small" id="modal-copy-cover" type="button">复制封面提示词</button>
+        <button class="btn ghost small" id="modal-folder" type="button">打开文件夹</button>
+        <button class="btn ghost small" id="modal-close" type="button">关闭</button>
       </div>
     </div>
     <div class="modal-tabs">
-      <button class="mtab is-active" data-mtab="article">正文预览</button>
-      <button class="mtab" data-mtab="selfcheck">自检报告</button>
-      <button class="mtab" data-mtab="changes">去 AI 味改动</button>
-      <button class="mtab" data-mtab="outline">大纲</button>
-      <button class="mtab" data-mtab="raw">原始 Markdown</button>
+      <button class="mtab is-active" data-mtab="article" type="button">正文预览</button>
+      <button class="mtab" data-mtab="cover" type="button">封面提示词</button>
+      <button class="mtab" data-mtab="selfcheck" type="button">自检报告</button>
+      <button class="mtab" data-mtab="changes" type="button">去 AI 味改动</button>
+      <button class="mtab" data-mtab="outline" type="button">大纲</button>
+      <button class="mtab" data-mtab="raw" type="button">原始 Markdown</button>
     </div>
     <div class="modal-body">
       <div class="mpane is-active markdown-body" id="mpane-article"></div>
+      <div class="mpane markdown-body" id="mpane-cover"></div>
       <div class="mpane markdown-body" id="mpane-selfcheck"></div>
       <div class="mpane markdown-body" id="mpane-changes"></div>
       <div class="mpane markdown-body" id="mpane-outline"></div>
       <div class="mpane" id="mpane-raw"><pre class="raw"></pre></div>
+    </div>
+  </div>
+</div>
+
+<!-- 轻提示。替代 alert()，不打断操作 -->
+<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+<!-- 通用确认框（替代 confirm()） -->
+<div class="modal hidden" id="confirm" role="dialog" aria-modal="true">
+  <div class="confirm-box">
+    <h3 id="confirm-title">确认</h3>
+    <p class="note" id="confirm-text"></p>
+    <div class="row gap end">
+      <button class="btn" id="confirm-no" type="button">取消</button>
+      <button class="btn primary" id="confirm-yes" type="button">确定</button>
     </div>
   </div>
 </div>
