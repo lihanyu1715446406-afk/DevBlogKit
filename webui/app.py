@@ -127,14 +127,10 @@ def create_app(job_queue: JobQueue = None, config: dict = None) -> Flask:
 
     @app.get("/api/config")
     def api_config():
-        image = cfg.get("image", {})
-        vision = cfg.get("vision", {})
         return jsonify({
             "default_category": cfg.get("content", {}).get("default_category", "技术"),
             "default_tags": cfg.get("content", {}).get("default_tags", []),
             "article_types": ARTICLE_TYPE_CHOICES,
-            "image_provider": image.get("provider", ""),
-            "vision_provider": vision.get("provider", ""),
             "review_timeout": cfg.get("web", {}).get("review_timeout_seconds", 600),
             "output_base": str(Path(base_dir).resolve()),
             # 现读一次：切换过写作模型之后，这里的提醒要跟着变

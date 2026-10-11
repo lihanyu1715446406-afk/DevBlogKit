@@ -103,7 +103,7 @@ def _build_system_prompt(
 ) -> tuple[str, str]:
     """构建写作系统提示词。
 
-    写作风格以注入的 skill 规则为准，不再参照 samples 目录里的历史文章。
+    写作风格以注入的 skill 规则为准（见 skill_loader），不参照历史文章样本。
 
     Args:
         category: 命令行指定的分类。要传给 frontmatter 模板，否则模板里写的是
@@ -403,10 +403,6 @@ def extract_title(article: str) -> Optional[str]:
         return h1_match.group(1).strip()
 
     return None
-
-
-# 兼容旧调用名
-_extract_title = extract_title
 
 
 def extract_image_descriptions(article: str) -> list[str]:

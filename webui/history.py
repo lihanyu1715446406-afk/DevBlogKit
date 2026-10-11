@@ -58,9 +58,11 @@ def _parse_frontmatter(text: str) -> dict:
 
 
 def _parse_selfcheck(text: str) -> dict:
-    """解析 selfcheck.md 开头的「## 生成信息」块和结论行。"""
-    out: dict = {"ok": None, "article_type": "", "skill_source": "",
-                 "suggestion_reason": "", "illustration_count": ""}
+    """解析 selfcheck.md 开头的「## 生成信息」块和结论行。
+
+    只取前端会用的字段：结论、文章类型、配图建议原因。
+    """
+    out: dict = {"ok": None, "article_type": "", "suggestion_reason": ""}
 
     m = re.search(r"^-\s*结论：\s*(.+)$", text, re.MULTILINE)
     if m:
@@ -68,9 +70,7 @@ def _parse_selfcheck(text: str) -> dict:
 
     for field, key in (
         ("文章类型", "article_type"),
-        ("skill 来源", "skill_source"),
         ("配图建议原因", "suggestion_reason"),
-        ("已生成插图", "illustration_count"),
     ):
         mm = re.search(rf"^-\s*{field}：\s*(.+)$", text, re.MULTILINE)
         if mm:

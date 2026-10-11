@@ -100,11 +100,3 @@ def build_prompt_section(profile: dict = None) -> str:
         return ""
 
     return _PROMPT_TEMPLATE.format(summary="；".join(_summary_parts(profile)))
-
-
-def summarize(profile: dict = None) -> str:
-    """一行摘要，界面上用。"""
-    profile = profile if profile is not None else load_profile()
-    if is_empty(profile):
-        return "（未填写，文章按默认方式写）"
-    return "；".join(_summary_parts(profile))

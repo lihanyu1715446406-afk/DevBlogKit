@@ -124,8 +124,8 @@ selfcheck:
     intro_chars: 120    # 前言字数上限（硬性）
 
 # --- 内容设置 ---
+# 文章语言固定为中文，没有对应的配置项。
 content:
-  language: "zh-CN"
   # 写作取向：注入写作提示词，决定文章怎么取舍。
   # 不再预设固定的读者水平，按题材灵活判断。
   # 写成一行：用 YAML 的 > 折行会在换行处插入空格，中文里会多出空格。
@@ -174,11 +174,11 @@ cover_prompt:
   repair_max_tokens: 4600
 
 # --- 输出 ---
+# 目录名固定为 {日期}-{标题slug}（同名同日自动加 -2 后缀），文章文件名固定为 index.md。
+# 这两项目前是写死的行为，没有配置项——原来的 organize_by_date / filename_template
+# 两个键从来没有任何代码读取过，已删除。
 output:
   base_dir: "./output"
-  organize_by_date: true
-  # 文件名模板: {date} 替换为日期, {title} 替换为标题 slug
-  filename_template: "{date}-{title}"
 
 # --- 日志 ---
 logging:
