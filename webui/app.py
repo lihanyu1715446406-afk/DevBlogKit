@@ -120,6 +120,15 @@ def create_app(job_queue: JobQueue = None, config: dict = None) -> Flask:
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config["JSON_AS_ASCII"] = False
 
+    # 改了 templates/index.html 要立刻生效，不用重启服务。
+    #
+    # 这是个实际踩过的坑：Jinja 默认把模板缓存在内存里（服务以 debug=False 启动，
+    # auto_reload 就是关的），而 /static/ 下的文件是每次读盘的（no-cache + ETag）。
+    # 于是服务长驻时改了页面结构，就会出现「旧 HTML + 新 JS」：新 JS 去绑定
+    # 旧页面里不存在的元素，在顶层就抛异常，**后面注册的所有按钮监听器全部失效**，
+    # 表现为「很多按键都没反应」，而且看代码完全正常，极难排查。
+    app.config["TEMPLATES_AUTO_RELOAD"] = True
+
     cfg = config or load_config()
     queue_ = job_queue or JobQueue(
         review_timeout=cfg.get("web", {}).get("review_timeout_seconds", DEFAULT_REVIEW_TIMEOUT)
