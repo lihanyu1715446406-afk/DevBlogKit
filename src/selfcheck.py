@@ -1,7 +1,7 @@
 """
 交付前自检：格式标记数量、前言长度、frontmatter、禁用句式、敏感词、模板残留、图片存在性。
 
-对应 learning-tech-blog skill「五、交付格式」的格式门禁与「六、完成后自检」。
+对应 learning-tech-blog skill“五、交付格式”的格式门禁与“六、完成后自检”。
 超限时由调用方决定是否回喂给模型重写（见 build_repair_instruction）。
 """
 
@@ -38,7 +38,7 @@ BANNED_PATTERNS = [
     {"pattern": r"课堂图|课程资料显示|我看到的图片", "label": "来源标签", "max_hits": 0},
     {"pattern": r"这篇文章我打算|下面我分三步|我这里准备讲", "label": "作者自述句", "max_hits": 0},
     # 注入了写作者背景之后，模型可能开始自报身份或编造个人经历。
-    # 正文必须是面向读者的解释，不能变成「作为一个 X 开发者」的自述。
+    # 正文必须是面向读者的解释，不能变成“作为一个 X 开发者”的自述。
     {"pattern": r"作为(?:一[名个])?(?:后端|前端|全栈|Java|服务端|运维)?开发", "label": "作者身份自述", "max_hits": 0},
     {"pattern": r"我(?:在|做)[^。\n]{0,12}项目(?:里|中)", "label": "作者经历自述", "max_hits": 0},
     {"pattern": r"我(?:自己)?(?:也)?(?:曾经)?(?:踩过|踩了)[^。\n]{0,8}坑", "label": "作者经历自述", "max_hits": 0},
@@ -48,11 +48,20 @@ BANNED_PATTERNS = [
     {"pattern": r"赋能|彰显|凸显|无缝|优雅|极致的|为[^。\n]{0,10}奠定基础|标志着|见证了", "label": "AI 高频词/宣传腔", "max_hits": 0},
     {"pattern": r"希望对[你您]有帮助|当然！|你说得非常对", "label": "协作痕迹", "max_hits": 0},
     {"pattern": r"截至\s*\d{4}\s*年|根据目前掌握的信息", "label": "知识截止免责", "max_hits": 0},
+    # 直角引号：用户明确要求正文不出现。label 直接写成动作，回喂重写时模型才知道怎么改。
+    # hide_match：回喂指令里只报行号、不复现字符本身——把被禁的符号再送到模型眼前，
+    # 反而可能让它照抄回来。
+    {
+        "pattern": r"[「」]",
+        "label": "直角引号（改用中文双引号 “ ”）",
+        "max_hits": 0,
+        "hide_match": True,
+    },
 ]
 
 # 总结尾巴：skill 明确禁止追加这类话题清单。
-# 注意这些动词是必须的——只写「后续可以」会误伤正常叙述，
-# 比如「把后续可以独立完成、独立重试的步骤交给异步」。
+# 注意这些动词是必须的——只写“后续可以”会误伤正常叙述，
+# 比如“把后续可以独立完成、独立重试的步骤交给异步”。
 TAIL_PATTERNS = [
     r"后续学习计划",
     r"后续可以(?:继续)?(?:了解|学习|阅读|研究|深入|看看)",
@@ -135,7 +144,7 @@ def _count_matches(patterns: list[str], text: str) -> list[tuple[int, str]]:
 def _count_quotes(body: str) -> int:
     """统计引用块数量。
 
-    formatter 生成的「配图建议」块也是 > 开头，但它们不是作者写的引用，
+    formatter 生成的“配图建议”块也是 > 开头，但它们不是作者写的引用，
     算进来会让每篇带配图建议的文章都超标、被反复重写，所以排除掉。
     """
     count = 0
@@ -230,7 +239,11 @@ def check_article(
     for item in BANNED_PATTERNS:
         hits = _count_matches([item["pattern"]], body)
         if len(hits) > item["max_hits"]:
-            spot = "；".join(f"第 {ln} 行 {txt!r}" for ln, txt in hits[:3])
+            if item.get("hide_match"):
+                # 只报行号：复现字符本身会把被禁的符号又送进模型上下文
+                spot = "；".join(f"第 {ln} 行" for ln, _ in hits[:3])
+            else:
+                spot = "；".join(f"第 {ln} 行 {txt!r}" for ln, txt in hits[:3])
             problems.append({
                 "label": item["label"],
                 "detail": f"出现 {len(hits)} 次（允许 {item['max_hits']} 次）：{spot}",
@@ -383,7 +396,7 @@ def build_repair_instruction(result: dict, limits: Optional[dict] = None) -> str
         "3. 前言必须合并成一整段（第一个 ## 之前只有这一段），2-3 句话，"
         "压到 100 字以内（上限是 120，要到 100 以内才算稳妥）。"
         "把原来开篇的场景句压缩成第一句，后面接一两句概括本文覆盖什么、"
-        "这些内容怎么串成主线，不要拆成「场景段 + 引言段」",
+        "这些内容怎么串成主线，不要拆成“场景段 + 引言段”",
         "4. 保持现在这种自然的中文表达，不要引入套话",
         "5. 直接输出完整 Markdown 文章，不要用 ``` 包裹，不要输出解释或改动说明",
     ]
