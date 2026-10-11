@@ -20,7 +20,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 os.chdir(PROJECT_ROOT)
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.config_loader import load_config, validate_config  # noqa: E402
+from src.config_loader import (  # noqa: E402
+    DEFAULT_LOG_LEVEL,
+    DEFAULT_REVIEW_TIMEOUT,
+    load_config,
+    validate_config,
+)
 from src.utils import setup_logging  # noqa: E402
 from webui.app import create_app  # noqa: E402
 from webui.jobs import JobQueue, QueueLogHandler  # noqa: E402
@@ -79,7 +84,7 @@ def main():
     # 所以界面用的 Handler 必须在这之后挂，否则会被清掉。
     log_config = config.get("logging", {})
     setup_logging(
-        level=log_config.get("level", "INFO"),
+        level=log_config.get("level", DEFAULT_LOG_LEVEL),
         log_file=log_config.get("file"),
     )
     import logging
@@ -91,7 +96,7 @@ def main():
         print(f"  ⚠️ {w}")
 
     job_queue = JobQueue(
-        review_timeout=web_config.get("review_timeout_seconds", 600)
+        review_timeout=web_config.get("review_timeout_seconds", DEFAULT_REVIEW_TIMEOUT)
     )
     job_queue.start()
 

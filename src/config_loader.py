@@ -66,6 +66,17 @@ def load_config(config_path: str = None) -> Dict[str, Any]:
     return _resolve_env_vars(raw)
 
 
+# 其他配置项的兜底默认值。
+#
+# 这些值改造前散在 pipeline.py / writer.py / webui/app.py 里各写一遍，
+# 同一个键出现两三个不同的默认值，改一处忘一处就会不一致。集中到这里，
+# 其他模块一律 import 常量，别再写第二遍。
+DEFAULT_CATEGORY = "技术"
+DEFAULT_TAGS: list = []
+DEFAULT_REVIEW_TIMEOUT = 600        # web.review_timeout_seconds
+DEFAULT_LOG_LEVEL = "INFO"          # logging.level
+
+
 # provider 对应的环境变量名，用于生成准确的提示
 PROVIDER_KEY_ENV = {
     "deepseek": "DEEPSEEK_API_KEY",

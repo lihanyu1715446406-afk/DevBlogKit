@@ -6,22 +6,19 @@ prompts/humanize.txt。作为写作之后的独立阶段运行，不改变文章
 """
 
 import logging
-import re
 from pathlib import Path
 from typing import Optional
 
 from .config_loader import load_config
 from .llm_client import LLMClient
 from .skill_loader import load_skill
+from .text_utils import IMAGE_MARKER_RE, strip_fence
 from .utils import write_file
 
 logger = logging.getLogger("blog_pipeline")
 
 # 模型用它分隔「改写后的文章」和「改动清单」
 CHANGES_MARKER = "<!-- HUMANIZE-CHANGES -->"
-
-_FENCE_RE = re.compile(r'^\s*```[a-zA-Z]*\s*\n')
-_IMAGE_RE = re.compile(r'\[IMAGE:\s*([^\]]+)\]')
 
 
 def load_humanize_prompt(config: dict) -> tuple[str, str]:
@@ -31,16 +28,6 @@ def load_humanize_prompt(config: dict) -> tuple[str, str]:
         (提示词文本, 来源标识 skill|prompts)
     """
     return load_skill("humanizer", config=config)
-
-
-def _strip_fence(text: str) -> str:
-    """去掉模型可能给整篇文章套上的 ``` 代码围栏。"""
-    text = text.strip()
-    if _FENCE_RE.match(text):
-        text = _FENCE_RE.sub("", text, count=1)
-        if text.rstrip().endswith("```"):
-            text = text.rstrip()[:-3]
-    return text.strip()
 
 
 def _split_changes(raw: str) -> tuple[str, Optional[str]]:
@@ -65,8 +52,8 @@ def _validate(
     if original.lstrip().startswith("---") and not rewritten.lstrip().startswith("---"):
         return False, "frontmatter 丢失"
 
-    before = _IMAGE_RE.findall(original)
-    after = _IMAGE_RE.findall(rewritten)
+    before = IMAGE_MARKER_RE.findall(original)
+    after = IMAGE_MARKER_RE.findall(rewritten)
     if before != after:
         return False, f"插图标记不一致（{len(before)} → {len(after)}）"
 
@@ -119,7 +106,7 @@ async def humanize_article(article: str, *, config: dict = None) -> dict:
         max_tokens=hcfg.get("max_tokens", 8192),
     )
 
-    rewritten, changes = _split_changes(_strip_fence(raw))
+    rewritten, changes = _split_changes(strip_fence(raw))
 
     ok, reason = _validate(
         article, rewritten, hcfg.get("min_length_ratio", 0.6)

@@ -8,6 +8,7 @@ from datetime import date
 from pathlib import Path
 from typing import Optional
 
+from .text_utils import IMAGE_MARKER_RE
 from .utils import title_to_slug, write_file
 
 logger = logging.getLogger("blog_pipeline")
@@ -137,9 +138,7 @@ def assemble_output(
     # 处理未被替换的 [IMAGE: ...]（未配图 API / 超出上限）
     def _replace_remaining(match):
         return _suggestion_block(match.group(1), suggestion_reason)
-    final_article = re.sub(
-        r'\[IMAGE:\s*([^\]]+)\]', _replace_remaining, final_article
-    )
+    final_article = IMAGE_MARKER_RE.sub(_replace_remaining, final_article)
 
     # 在 frontmatter 后面插入封面图
     if cover_path:

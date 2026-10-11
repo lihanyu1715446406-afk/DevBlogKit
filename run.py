@@ -46,7 +46,7 @@ from pathlib import Path
 # 确保项目根目录在 Python path 中
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.config_loader import load_config, validate_config
+from src.config_loader import DEFAULT_LOG_LEVEL, load_config, validate_config
 from src.pipeline import ProgressEvent, run_pipeline
 
 logger = logging.getLogger("blog_pipeline")
@@ -204,13 +204,13 @@ def main():
         from src.utils import setup_logging
 
         setup_logging(
-            level=log_config.get("level", "INFO"),
+            level=log_config.get("level", DEFAULT_LOG_LEVEL),
             log_file=log_config.get("file"),
         )
     except FileNotFoundError:
         from src.utils import setup_logging
 
-        setup_logging("INFO")
+        setup_logging(DEFAULT_LOG_LEVEL)
 
     # 检查配置
     if args.topic:

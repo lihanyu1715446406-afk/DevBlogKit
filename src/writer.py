@@ -8,21 +8,33 @@
 import logging
 import re
 from datetime import date
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
 from .author_profile import build_prompt_section
-from .config_loader import load_config
+from .config_loader import DEFAULT_CATEGORY, DEFAULT_TAGS, load_config
 from .llm_client import LLMClient
 from .skill_loader import load_skill
+from .text_utils import extract_image_descriptions as _extract_image_descriptions
+from .text_utils import strip_fence
 from .utils import read_file
 
 logger = logging.getLogger("blog_pipeline")
 
-# 写作提示词模板
-WRITING_PROMPT_TEMPLATE = read_file(
-    str(Path(__file__).parent.parent / "prompts" / "writing.txt")
-)
+PROJECT_ROOT = Path(__file__).parent.parent
+WRITING_TEMPLATE_FILE = PROJECT_ROOT / "prompts" / "writing.txt"
+
+
+@lru_cache(maxsize=1)
+def _writing_template() -> str:
+    """读取写作提示词模板。
+
+    改造前这行在**模块导入时**执行：prompts/writing.txt 一旦缺失或被占用，
+    import writer 就直接抛异常，整条流水线连启动都起不来。改成用时才读，
+    和 cover_prompt / skill_loader / author_profile 的加载方式一致。
+    """
+    return read_file(str(WRITING_TEMPLATE_FILE))
 
 # 写作取向的兜底值。config.yaml 里 content.writing_focus 没配时用这个
 DEFAULT_WRITING_FOCUS = (
@@ -122,13 +134,13 @@ def _build_system_prompt(
     )
 
     # 命令行覆盖优先，其次是配置里的默认值
-    effective_category = category or content_config.get("default_category", "技术")
-    effective_tags = tags or content_config.get("default_tags", [])
+    effective_category = category or content_config.get("default_category", DEFAULT_CATEGORY)
+    effective_tags = tags or content_config.get("default_tags", DEFAULT_TAGS)
     tags_str = ", ".join(effective_tags) if effective_tags else "技术, 后端"
 
     today = date.today().strftime("%Y-%m-%d")
 
-    prompt = WRITING_PROMPT_TEMPLATE.format(
+    prompt = _writing_template().format(
         style_section=style_section,
         date=today,
         category=effective_category,
@@ -219,7 +231,7 @@ async def generate_outline(
 
 async def generate_article(
     topic: str,
-    outline: str,
+    outline: Optional[str] = None,
     *,
     category: str = None,
     tags: list[str] = None,
@@ -227,11 +239,15 @@ async def generate_article(
     article_type: str = "knowledge",
     extra_instruction: str = "",
 ) -> str:
-    """根据大纲生成完整文章。
+    """生成完整文章。
+
+    改造前这里有两个几乎逐行相同的函数（generate_article / generate_article_direct），
+    差别只在 user message 的措辞：有大纲就按大纲写，没有就直接写。合并成一个函数，
+    按 outline 是否为空分支——两段措辞原样保留，不改模型看到的内容。
 
     Args:
         topic: 原始题材
-        outline: 上一步生成的大纲
+        outline: 上一步生成的大纲；为空表示跳过大纲直接写（--fast）
         category: 文章分类
         tags: 文章标签
         material: 素材文本
@@ -259,65 +275,28 @@ async def generate_article(
 
     material_block = build_material_block(material)
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {
-            "role": "user",
-            "content": (
-                f"题材：{topic}{extra}{material_block}\n\n"
-                f"以下是大纲，请根据大纲写出完整文章：\n\n{outline}\n\n"
-                f"请直接输出完整的 Markdown 文章（以 YAML frontmatter 开头）。"
-                f"记住：在需要配图的位置用 [IMAGE: 描述] 标记。"
-                + (f"\n\n{extra_instruction}" if extra_instruction else "")
-            ),
-        },
-    ]
-
-    logger.info("开始生成正文 - 题材: %s", topic[:50])
-    article = await client.chat(messages, temperature=0.8, max_tokens=8192)
-    return article
-
-
-async def generate_article_direct(
-    topic: str,
-    *,
-    category: str = None,
-    tags: list[str] = None,
-    material: str = "",
-    article_type: str = "knowledge",
-) -> str:
-    """直接生成文章（跳过大纲阶段），适用于短文章。"""
-    config = load_config()
-    client = LLMClient(config)
-    system_prompt, _ = _build_system_prompt(
-        config,
-        article_type=article_type,
-        has_material=bool(material.strip()),
-        category=category,
-        tags=tags,
-    )
-
-    extra = ""
-    if category:
-        extra += f"\n文章分类：{category}"
-    if tags:
-        extra += f"\n文章标签：{', '.join(tags)}"
-
-    material_block = build_material_block(material)
+    if outline:
+        body = (
+            f"题材：{topic}{extra}{material_block}\n\n"
+            f"以下是大纲，请根据大纲写出完整文章：\n\n{outline}\n\n"
+            f"请直接输出完整的 Markdown 文章（以 YAML frontmatter 开头）。"
+            f"记住：在需要配图的位置用 [IMAGE: 描述] 标记。"
+            + (f"\n\n{extra_instruction}" if extra_instruction else "")
+        )
+        logger.info("开始生成正文 - 题材: %s", topic[:50])
+    else:
+        body = (
+            f"请根据以下题材，直接写出完整的 Markdown 文章（以 YAML frontmatter 开头）：\n\n"
+            f"{topic}{extra}{material_block}\n\n"
+            f"在需要配图的位置用 [IMAGE: 描述] 标记。"
+        )
+        logger.info("直接生成文章（跳过大纲） - 题材: %s", topic[:50])
 
     messages = [
         {"role": "system", "content": system_prompt},
-        {
-            "role": "user",
-            "content": (
-                f"请根据以下题材，直接写出完整的 Markdown 文章（以 YAML frontmatter 开头）：\n\n"
-                f"{topic}{extra}{material_block}\n\n"
-                f"在需要配图的位置用 [IMAGE: 描述] 标记。"
-            ),
-        },
+        {"role": "user", "content": body},
     ]
 
-    logger.info("直接生成文章 - 题材: %s", topic[:50])
     return await client.chat(messages, temperature=0.8, max_tokens=8192)
 
 
@@ -377,12 +356,7 @@ async def revise_article(
         return article
 
     # 模型偶尔会把整篇套进代码围栏，剥掉
-    revised = revised.strip()
-    if revised.startswith("```"):
-        lines = revised.splitlines()[1:]
-        if lines and lines[-1].strip().startswith("```"):
-            lines = lines[:-1]
-        revised = "\n".join(lines).strip()
+    revised = strip_fence(revised)
 
     if len(revised) < len(article) * 0.5:
         logger.warning("修正结果长度异常（%d → %d），保留原文", len(article), len(revised))
@@ -406,8 +380,12 @@ def extract_title(article: str) -> Optional[str]:
 
 
 def extract_image_descriptions(article: str) -> list[str]:
-    """提取文章里的 [IMAGE: 描述] 标记。"""
-    return re.findall(r'\[IMAGE:\s*([^\]]+)\]', article)
+    """提取文章里的 [IMAGE: 描述] 标记。
+
+    实现放在 text_utils，这里保留同名函数是因为它在 writer 的对外接口上
+    （write_article 的返回值、管道其他阶段都按这个名字取用）。
+    """
+    return _extract_image_descriptions(article)
 
 
 async def write_article(
@@ -439,13 +417,6 @@ async def write_article(
 
     if skip_outline:
         outline = None
-        article = await generate_article_direct(
-            topic,
-            category=category,
-            tags=tags,
-            material=material,
-            article_type=resolved_type,
-        )
     else:
         outline = await generate_outline(
             topic,
@@ -454,14 +425,16 @@ async def write_article(
             material=material,
             article_type=resolved_type,
         )
-        article = await generate_article(
-            topic,
-            outline,
-            category=category,
-            tags=tags,
-            material=material,
-            article_type=resolved_type,
-        )
+
+    # outline 为空就是「跳过大纲直接写」，generate_article 内部按这个分支
+    article = await generate_article(
+        topic,
+        outline,
+        category=category,
+        tags=tags,
+        material=material,
+        article_type=resolved_type,
+    )
 
     title = extract_title(article) or topic
 

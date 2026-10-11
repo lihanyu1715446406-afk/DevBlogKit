@@ -27,6 +27,9 @@ from src.author_profile import (
     save_profile,
 )
 from src.config_loader import (
+    DEFAULT_CATEGORY,
+    DEFAULT_REVIEW_TIMEOUT,
+    DEFAULT_TAGS,
     LLM_PROVIDERS,
     PROVIDER_KEY_ENV,
     load_config,
@@ -113,7 +116,7 @@ def create_app(job_queue: JobQueue = None, config: dict = None) -> Flask:
 
     cfg = config or load_config()
     queue_ = job_queue or JobQueue(
-        review_timeout=cfg.get("web", {}).get("review_timeout_seconds", 600)
+        review_timeout=cfg.get("web", {}).get("review_timeout_seconds", DEFAULT_REVIEW_TIMEOUT)
     )
     base_dir = cfg.get("output", {}).get("base_dir", "./output")
 
@@ -128,10 +131,10 @@ def create_app(job_queue: JobQueue = None, config: dict = None) -> Flask:
     @app.get("/api/config")
     def api_config():
         return jsonify({
-            "default_category": cfg.get("content", {}).get("default_category", "技术"),
-            "default_tags": cfg.get("content", {}).get("default_tags", []),
+            "default_category": cfg.get("content", {}).get("default_category", DEFAULT_CATEGORY),
+            "default_tags": cfg.get("content", {}).get("default_tags", DEFAULT_TAGS),
             "article_types": ARTICLE_TYPE_CHOICES,
-            "review_timeout": cfg.get("web", {}).get("review_timeout_seconds", 600),
+            "review_timeout": cfg.get("web", {}).get("review_timeout_seconds", DEFAULT_REVIEW_TIMEOUT),
             "output_base": str(Path(base_dir).resolve()),
             # 现读一次：切换过写作模型之后，这里的提醒要跟着变
             "warnings": validate_config(load_config()),

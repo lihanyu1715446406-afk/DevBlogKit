@@ -14,7 +14,7 @@ from datetime import date
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
-from .config_loader import load_config
+from .config_loader import DEFAULT_CATEGORY, DEFAULT_TAGS, load_config
 from .cover_prompt import generate_cover_prompt
 from .formatter import assemble_output, save_outline
 from .humanizer import humanize_article, save_humanize_report
@@ -640,8 +640,8 @@ async def run_pipeline(
         illustration_paths=illustration_paths,
         output_dir=str(art_dir),
         suggestion_reason=suggestion_reason,
-        category=category or content_config.get("default_category", "技术"),
-        tags=tags or content_config.get("default_tags", []),
+        category=category or content_config.get("default_category", DEFAULT_CATEGORY),
+        tags=tags or content_config.get("default_tags", DEFAULT_TAGS),
     )
     result["output_path"] = final_path
 

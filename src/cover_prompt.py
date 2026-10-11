@@ -24,6 +24,7 @@ from typing import Optional
 from .config_loader import load_config
 from .cover_history import format_recent_note, history_base_dir, load_recent_covers
 from .llm_client import LLMClient
+from .text_utils import strip_fence
 from .utils import read_file, write_file
 
 logger = logging.getLogger("blog_pipeline")
@@ -70,8 +71,6 @@ _NO_TEXT_MARKER = "[NO-TEXT PROMPT]"
 _ORDINAL_RE = re.compile(
     r"^\s*#{0,6}\s*(?:[一二三四五六七八九十]+\s*[、.．)）]|[0-9]+\s*[、.．)）])\s*"
 )
-
-_FENCE_RE = re.compile(r"^\s*```[a-zA-Z]*\s*\n")
 
 # Windows 文件名里非法或容易被系统吃掉的字符
 _ILLEGAL_FILENAME_RE = re.compile(r'[\\/:*?"<>|\r\n\t]')
@@ -193,16 +192,6 @@ def load_cover_design(config: Optional[dict] = None) -> str:
 # ============================================================
 
 
-def _strip_fence(text: str) -> str:
-    """去掉模型可能给整段内容套上的 ``` 代码围栏。"""
-    text = (text or "").strip()
-    if _FENCE_RE.match(text):
-        text = _FENCE_RE.sub("", text, count=1)
-        if text.rstrip().endswith("```"):
-            text = text.rstrip()[:-3]
-    return text.strip()
-
-
 def _shrink_article(article: str, limit: int) -> str:
     """文章过长时按「头 + 尾」截断，并留下明确的截断标记。"""
     text = (article or "").strip()
@@ -221,7 +210,7 @@ def _shrink_article(article: str, limit: int) -> str:
 
 def _parse_json_object(text: str) -> Optional[dict]:
     """从模型输出里抠出一个 JSON 对象。抠不出来返回 None。"""
-    cleaned = _strip_fence(text or "")
+    cleaned = strip_fence(text or "")
     if not cleaned:
         return None
     # 模型偶尔在 JSON 前后加一句解释，取第一个 { 到最后一个 } 之间的内容
@@ -457,7 +446,7 @@ def _clean_prompt_block(text: str) -> str:
     只按「一、」「1.」「## 三、」这种序号格式剥，不能无差别 strip 中文字符：
     提示词正文本身可能就以「一」「三」开头（例如「三台设备…」「一条时间线…」）。
     """
-    text = _strip_fence(text or "").strip()
+    text = strip_fence(text or "").strip()
     for _ in range(3):
         new = _ORDINAL_RE.sub("", text, count=1).strip()
         if new == text:
@@ -509,7 +498,7 @@ async def _render_no_text_fallback(
         temperature=0.6,
         max_tokens=config.get("cover_prompt", {}).get("render_max_tokens", 4096),
     )
-    return _strip_fence(text or "")
+    return strip_fence(text or "")
 
 
 async def render_cover_prompt(

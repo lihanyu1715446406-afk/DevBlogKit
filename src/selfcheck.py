@@ -10,6 +10,8 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from .text_utils import FENCE_LINE_RE, IMAGE_MARKER_RE
+
 logger = logging.getLogger("blog_pipeline")
 
 # 门禁阈值。quote / inline_code / intro_chars 是硬性（超了要重写），
@@ -75,16 +77,14 @@ SENSITIVE_PATTERNS = [
 # 模板残留
 TEMPLATE_PATTERNS = [r"\{\{", r"\bTODO\b", r"占位符", r"<[a-z_]+_placeholder>"]
 
-_FENCE_RE = re.compile(r"^\s*```")
 _IMAGE_MD_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
-_IMAGE_MARKER_RE = re.compile(r"\[IMAGE:\s*([^\]]+)\]")
 
 
 def split_code_blocks(text: str) -> str:
     """去掉围栏代码块，返回只含正文的文本（用于统计内联反引号）。"""
     body, in_fence = [], False
     for line in text.splitlines():
-        if _FENCE_RE.match(line):
+        if FENCE_LINE_RE.match(line):
             in_fence = not in_fence
             continue
         if not in_fence:
@@ -280,7 +280,7 @@ def check_article(
         intro_len=intro_len,
         limits=limits,
         has_frontmatter=frontmatter is not None,
-        marker_count=len(_IMAGE_MARKER_RE.findall(article)),
+        marker_count=len(IMAGE_MARKER_RE.findall(article)),
     )
 
     return {

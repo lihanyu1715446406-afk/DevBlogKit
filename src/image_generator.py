@@ -44,7 +44,9 @@ class ImageGenerator:
         config = config or load_config()
 
         img_config = config.get("image", {})
-        self.provider = img_config.get("provider", "doubao")
+        # 默认 none：没有明确配置 provider 时不出图、只出配图建议。
+        # 改造前这里的默认值是 doubao，等于「没配置就悄悄去调付费出图接口」。
+        self.provider = img_config.get("provider", "none")
         self.provider_config = img_config.get(self.provider, {})
 
         self.cover_size = (
