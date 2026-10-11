@@ -1,0 +1,12 @@
+# Core
+pyyaml>=6.0
+openai>=1.0.0              # DeepSeek 和豆包/通义都用 OpenAI 兼容接口
+requests>=2.31.0           # 豆包出图和图片下载
+python-slugify>=8.0        # URL slug generation
+
+# 网页界面
+flask>=3.0                 # 本地可视化界面的后端
+markdown>=3.5              # 服务端渲染 Markdown 预览（纯 Python，无子依赖）
+
+# 可选：只有把 image.provider / vision.provider 切成 dashscope 时才需要
+# dashscope>=1.20.0

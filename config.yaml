@@ -1,0 +1,193 @@
+# ============================================
+# Blog Pipeline 配置文件
+# ============================================
+
+# --- 写作模型（文本生成）---
+# 流水线里所有「生成文字」的阶段都用这里的模型：写作、去 AI 味、封面提示词、
+# 插图 prompt 转写。读图（截图转录）不在这里，见下面的 vision 节，两者独立。
+#
+# provider 取值：
+#   deepseek = DeepSeek，中文技术写作稳、便宜、国内直连
+#   openai   = OpenAI，写作质量更好；需要梯子（国内 IP 会被拒）
+#              以及 platform.openai.com 的预付费额度（和 ChatGPT 会员无关）
+# 切换 provider 只改这一行，两套配置都留着，随时切回。
+# 网页界面「写作背景 → 模型配置」也能直接切，效果和改这里一样（写回的就是这一行）。
+llm:
+  provider: "deepseek"
+  temperature: 0.8                     # 全局默认温度，各阶段仍会传自己的
+  max_tokens: 8192
+  timeout_seconds: 120
+  max_retries: 3
+
+  deepseek:
+    api_key: "${DEEPSEEK_API_KEY}"
+    base_url: "https://api.deepseek.com"
+    # deepseek-chat 是普通模型（不思考），实测写作质量稳定，当前就用它。
+    # 换成 deepseek-flash / deepseek-v4-pro 的话它们是「思考模型」，必须同时看下面
+    # 那条 reasoning_effort —— 否则思考 token 会把 max_tokens 吃光，正文一个字都写不出来。
+    model: "deepseek-chat"
+    # 关掉思考。思考 token 也算在 max_tokens 里，且按输出计费。
+    # 普通模型（deepseek-chat）不需要这一行；思考模型建议设为 "none"。
+    # reasoning_effort: "none"
+
+  openai:
+    api_key: "${OPENAI_API_KEY}"
+    base_url: "https://api.openai.com/v1"
+    # gpt-4.1 系列接受 temperature，长文写作表现稳定；想降成本可以用 gpt-4.1-mini。
+    # 换成 GPT-5 系列也能跑：客户端会自动改用 max_completion_tokens 并去掉 temperature，
+    # 但那样 temperature 就失效了，风格控制全靠提示词。
+    model: "gpt-4.1"
+    # 高级选项：确认了模型脾气可以直接钉死，省掉第一次探测请求
+    # max_tokens_param: "max_completion_tokens"
+    # supports_temperature: false
+
+# --- 插图生成 ---
+# provider 取值：
+#   none      = 不生成图片，每个插图位置输出「配图建议」，你手动配图（当前选这个）
+#   doubao    = 火山方舟 Seedream，需要 ARK_API_KEY
+#   dashscope = 通义万相，需要 DASHSCOPE_API_KEY
+image:
+  provider: "none"
+  cover_width: 1664
+  cover_height: 928
+  illustration_width: 1024
+  illustration_height: 1024
+  max_illustrations: 3                 # 自动出图时，文中最多生成几张
+  generate_cover: true
+  generate_illustrations: true
+
+  doubao:
+    api_key: "${ARK_API_KEY}"
+    base_url: "https://ark.cn-beijing.volces.com/api/v3"
+    # 只开通了 Seedream 3.0 的话改成 doubao-seedream-3-0-t2i-250415
+    model: "doubao-seedream-4-0-250828"
+    watermark: false                   # true 会给图片加水印
+    response_format: "url"             # url 或 b64_json
+
+  dashscope:
+    api_key: "${DASHSCOPE_API_KEY}"
+    model: "wan2.1-t2i-v2"
+
+# --- 视觉模型 (截图材料转录) ---
+# 把截图转成文字，供写作使用。默认走 DeepSeek，和写作共用一个 key。
+# 三家都是 OpenAI 兼容接口，provider 选 deepseek / doubao / dashscope。
+vision:
+  provider: "deepseek"
+  max_images: 20                       # 单次最多转录几张截图
+  max_tokens: 4096                     # 单张转录的输出上限，幻灯片文字密，给足
+  timeout_seconds: 180
+  max_retries: 2
+
+  deepseek:
+    api_key: "${DEEPSEEK_API_KEY}"
+    base_url: "https://api.deepseek.com"
+    model: "deepseek-chat"
+    detail: "high"                     # low | high | original | auto，读小字用 high
+
+  doubao:
+    api_key: "${ARK_API_KEY}"
+    base_url: "https://ark.cn-beijing.volces.com/api/v3"
+    model: "doubao-seed-1-6-vision-250815"
+
+  dashscope:
+    api_key: "${DASHSCOPE_API_KEY}"
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    model: "qwen-vl-max-latest"
+
+# --- 写作规则来源 (Skill) ---
+# primary = skill   : 读真实 skill 文件，读不到回退 prompts 副本
+# primary = prompts : 只用 prompts/ 下的蒸馏副本，不依赖 skill 目录
+#
+# csdn 这个 key 是历史命名，现在指的是「正文写作规范 skill」，实际加载
+# learning-tech-blog。改名要同时动 pipeline.py / writer.py / webui 几处调用链，
+# 收益只是好看一点，所以沿用。对外显示的名字见 skill_loader.SKILL_LABELS。
+skills:
+  enabled: true
+  primary: "skill"
+  specs:
+    csdn:
+      # 项目级 skill：相对路径按项目根解析，换目录/换机器都不用改
+      # 读不到这个目录时，会自动回退到 prompts/blog-style.txt（写在 skill_loader 里）
+      dir: ".claude/skills/learning-tech-blog"
+    humanizer:
+      dir: "~/.claude/skills/Humanizer-zh"
+
+# --- 交付前自检 ---
+# 去 AI 味之后做一次格式和表达自检，不合格则回喂给模型重写一次。
+# 阈值对应 learning-tech-blog skill「五、交付格式」的格式门禁。
+selfcheck:
+  enabled: true
+  limits:
+    quote: 2            # 引用块上限（硬性）
+    inline_code: 5      # 正文内联反引号上限（硬性）
+    bold: 12            # 加粗片段上限（软性，只提示不重写）
+    intro_chars: 120    # 前言字数上限（硬性）
+
+# --- 内容设置 ---
+content:
+  language: "zh-CN"
+  # 写作取向：注入写作提示词，决定文章怎么取舍。
+  # 不再预设固定的读者水平，按题材灵活判断。
+  # 写成一行：用 YAML 的 > 折行会在换行处插入空格，中文里会多出空格。
+  writing_focus: "按具体题材灵活变通，不要预设读者的水平。真正决定一篇技术文章有没有价值的是「原理讲清 + 业务里怎么用」：技术原理要讲透，例子要落在能落地的工程场景上，不要停留在生活类比和空泛结论。宁可把一个概念讲透，也不要为了覆盖更多知识点而跳步。"
+  min_words: 1500
+  max_words: 4000
+  # 默认分类和标签（可在命令行覆盖）
+  default_category: "技术"
+  default_tags: []
+
+# --- 去 AI 味 (Humanizer) ---
+# 写作完成后，用 humanizer 规则再改写一遍（会多调一次 DeepSeek）
+humanize:
+  enabled: true                        # 关掉则默认不做，命令行 --no-humanize 可临时跳过
+  temperature: 0.7
+  max_tokens: 8192
+  # 改写后字数低于原文这个比例，判定为失败并回退到原文（防止模型截断）
+  min_length_ratio: 0.6
+
+# --- 封面提示词 ---
+# 文章写完之后，读定稿正文做一次结构化分析，自动在「高级技术杂志风」和
+# 「抽象概念视觉风」之间选一种，输出可直接粘贴到 ChatGPT ImageGen 等工具的中文提示词。
+# 只产出文本，不调用任何图片生成 API，不产生出图费用。
+# 设计规范（品牌规范、两种风格的完整定义、选择规则、标题规则）在 prompts/cover_design.txt，
+# 改设计不用动代码。
+cover_prompt:
+  enabled: true
+  max_article_chars: 12000             # 送进模型的正文上限，超出按「头 + 尾」截断
+  temperature: 0.5                     # 分析阶段：要稳定、可解析
+  max_tokens: 2048
+  render_temperature: 0.8              # 渲染阶段：高一点，减少每篇都写成同一个模板
+  render_max_tokens: 4096
+
+  # --- 质量检查（轻量，默认不额外花钱）---
+  # 提示词生成后按 10 项做一次纯规则检查：主题/风格/视觉主体/构图/配色/留白/
+  # 无关装饰/多余文字/与最近封面撞构图。检查本身不调用模型。
+  # 只有命中 fail 级问题（画面里冒出机器人芯片、标题丢了、构图和上一篇骨架相同等）
+  # 才允许一次针对性修正调用，且修正稿要确实让问题变少才会被采纳，否则保留原稿。
+  # 检查结论写在交付文件的「七、质量检查」一节，不会混进给图片模型的提示词。
+  quality_check: true
+  history_count: 3                     # 参考最近几篇的构图做避让；0 = 不看历史
+  repair: true                         # 命中 fail 时是否允许一次针对性修正调用
+  repair_temperature: 0.4
+  # 修正要同时输出修改后的字段和两份提示词，给足预算。
+  # 换思考模型时注意：思考 token 也占这个预算，建议同时配 reasoning_effort: "none"。
+  repair_max_tokens: 4600
+
+# --- 输出 ---
+output:
+  base_dir: "./output"
+  organize_by_date: true
+  # 文件名模板: {date} 替换为日期, {title} 替换为标题 slug
+  filename_template: "{date}-{title}"
+
+# --- 日志 ---
+logging:
+  level: "INFO"                        # DEBUG | INFO | WARNING | ERROR
+  file: "./data/pipeline.log"
+
+# --- 网页界面 ---
+web:
+  host: "127.0.0.1"                    # 只监听本机，不要暴露到局域网
+  port: 8756                           # 被占用会自动往后顺延
+  open_browser: true                   # 启动后自动打开浏览器
+  review_timeout_seconds: 600          # 勾了「先确认大纲」时，多久不确认就自动取消
