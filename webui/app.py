@@ -37,7 +37,7 @@ from src.config_loader import (
     set_llm_provider,
     validate_config,
 )
-from src.skill_loader import all_skill_info
+from src.skill_loader import SKILL_LABELS, all_skill_info, read_skill_body
 from src.writer import ARTICLE_TYPES, DEFAULT_WRITING_FOCUS
 
 from .history import list_articles, load_article, open_in_explorer, resolve_media
@@ -172,6 +172,25 @@ def create_app(job_queue: JobQueue = None, config: dict = None) -> Flask:
             "author_prompt_preview": build_prompt_section(profile),
         })
 
+    @app.get("/api/writing-spec")
+    def api_writing_spec():
+        """写作规范原文（只读展示用）。
+
+        返回的是 skill 主文件里**剥掉 frontmatter 的正文**，不是注入模型请求的那份
+        （那份前面拼了单轮生成声明）。界面按原文展示，改规范仍然要改文件。
+
+        单独开一个接口而不是塞进 /api/background：规范正文有几千字，
+        只有打开「写作规范」页时才需要，不该让每次刷新背景页都背上它。
+        """
+        body, path = read_skill_body("csdn", config=cfg)
+        return jsonify({
+            "ok": True,
+            "name": SKILL_LABELS.get("csdn", "csdn"),
+            "path": path,
+            "content": body,
+            "chars": len(body),
+        })
+
     @app.post("/api/llm-provider")
     def api_set_llm_provider():
         """切换写作模型（DeepSeek / OpenAI），写回 config.yaml 的 llm.provider。
@@ -276,6 +295,7 @@ def create_app(job_queue: JobQueue = None, config: dict = None) -> Flask:
             "humanize": not bool(payload.get("no_humanize", False)),
             "selfcheck": not bool(payload.get("no_selfcheck", False)),
             "no_images": bool(payload.get("no_images", False)),
+            "cover_prompt": not bool(payload.get("no_cover_prompt", False)),
         }
 
         job = queue_.submit(params)

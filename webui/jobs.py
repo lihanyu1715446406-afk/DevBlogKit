@@ -356,6 +356,7 @@ class JobQueue:
             article_type=p.get("article_type", "auto"),
             review=p.get("review", False),
             selfcheck=p.get("selfcheck", True),
+            cover_prompt=p.get("cover_prompt", True),
             on_progress=job.progress_callback(),
             confirm_outline=job.confirm_outline,
             is_cancelled=job.cancel_requested,

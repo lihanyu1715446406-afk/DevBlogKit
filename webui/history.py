@@ -11,6 +11,8 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from src.cover_history import COVER_PROMPT_SUFFIX
+
 logger = logging.getLogger("blog_pipeline")
 
 # 列表页只读文件开头这么多字节
@@ -18,6 +20,23 @@ HEAD_BYTES = 2048
 
 IMAGE_RE = re.compile(r"^img_\d+\.png$")
 ARTICLE_FILE = "index.md"
+
+
+def _find_cover_prompt(d: Path) -> Optional[Path]:
+    """找目录里的封面提示词文件。
+
+    文件名是「标题.cover_prompt.md」，标题里可能有空格和中文，所以按后缀找而不是按名字拼。
+    一篇文章只会有一个；万一有多个（改过标题重跑），取修改时间最新的那个。
+    """
+    try:
+        found = [p for p in d.glob(f"*{COVER_PROMPT_SUFFIX}") if p.is_file()]
+    except OSError:
+        return None
+    if not found:
+        return None
+    if len(found) == 1:
+        return found[0]
+    return max(found, key=lambda p: p.stat().st_mtime)
 
 
 def _read_head(path: Path, size: int = HEAD_BYTES) -> str:
@@ -157,6 +176,7 @@ def list_articles(base_dir: str) -> list[dict]:
             "has_cover": (d / "cover.png").is_file(),
             "has_changes": (d / "humanize_changes.md").is_file(),
             "has_outline": (d / "outline.md").is_file(),
+            "has_cover_prompt": _find_cover_prompt(d) is not None,
             "mtime": entry.stat().st_mtime,
         })
 
@@ -213,6 +233,17 @@ def load_article(base_dir: str, dir_name: str) -> Optional[dict]:
     changes_md = read("humanize_changes.md")
     outline_md = read("outline.md")
 
+    # 封面提示词文件名带标题，按后缀找（见 _find_cover_prompt）
+    cover_prompt_path = _find_cover_prompt(d)
+    cover_prompt_md = ""
+    if cover_prompt_path is not None:
+        try:
+            cover_prompt_md = cover_prompt_path.read_text(
+                encoding="utf-8", errors="replace"
+            )
+        except OSError:
+            cover_prompt_md = ""
+
     preview_raw = _rewrite_image_src(article_raw, dir_name)
 
     images = sorted(
@@ -231,6 +262,9 @@ def load_article(base_dir: str, dir_name: str) -> Optional[dict]:
         "changes_html": _render(changes_md) if changes_md else "",
         "outline_md": outline_md,
         "outline_html": _render(outline_md) if outline_md else "",
+        "cover_prompt_md": cover_prompt_md,
+        "cover_prompt_html": _render(cover_prompt_md) if cover_prompt_md else "",
+        "cover_prompt_name": cover_prompt_path.name if cover_prompt_path else "",
         "images": images,
         "has_cover": (d / "cover.png").is_file(),
         "abs_path": str(d),

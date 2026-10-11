@@ -212,6 +212,30 @@ def load_skill(
     return body, "skill"
 
 
+def read_skill_body(name: str, config: Optional[dict] = None) -> tuple[str, str]:
+    """读 skill 主文件的正文（剥掉 YAML frontmatter），返回 (正文, 文件路径)。
+
+    和 load_skill 的区别：那个返回的是**实际注入模型请求**的形态（前面拼了单轮生成声明，
+    humanizer 还追加了输出契约）。界面上要展示的是规范原文，所以这里单独读文件、不做包装。
+
+    读不到 skill 目录时返回兜底副本的正文；两者都没有时返回 ("", 预期路径)。
+    """
+    spec = DEFAULT_SKILL_SPECS.get(name)
+    if spec is None:
+        raise ValueError(f"未知的 skill: {name}")
+
+    skill_dir = _resolve_skill_dir(name, spec, config)
+    if skill_dir is not None:
+        main = skill_dir / spec["files"][0]
+        if main.is_file():
+            return _strip_frontmatter(main.read_text(encoding="utf-8")), str(main)
+
+    fallback = PROJECT_ROOT / spec["fallback"]
+    if fallback.is_file():
+        return fallback.read_text(encoding="utf-8").strip(), str(fallback)
+    return "", str(PROJECT_ROOT / spec["fallback"])
+
+
 def describe_skill_source(name: str, config: Optional[dict] = None) -> str:
     """返回 skill 来源的一句话描述，用于启动信息和自检报告。"""
     _, source = load_skill(name, config=config)
