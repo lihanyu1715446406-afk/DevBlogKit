@@ -5,6 +5,50 @@ __pycache__/
 .venv/
 venv/
 
+# ---- 环境变量与本地覆盖（不要提交真实密钥）----
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+
+# ---- 编辑器 / 操作系统 ----
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 临时文件与备份 ----
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+
+# ---- 测试 / 类型检查缓存 ----
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- 密钥与证书 ----
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa*
+*.ppk
+
+# ---- 本地数据库 ----
+*.sqlite
+*.sqlite3
+*.db
+
 # ---- 生成的文章与图片（用户数据，不进版本控制）----
 output/
 
