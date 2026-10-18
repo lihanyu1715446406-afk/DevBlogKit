@@ -1,4 +1,6 @@
-# Blog Pipeline
+# DevBlogKit
+
+面向开发者的博客工具箱：通过 AI 辅助工作流和自动化封面生成，让技术博客创作更高效。
 
 把技术选题（可附笔记、截图）变成一篇结构完整、可直接发布的中文技术博客。
 
@@ -23,8 +25,8 @@
 ## 安装
 
 ```bash
-git clone <repo-url>
-cd blog-pipeline
+git clone https://github.com/lihanyu1715446406-afk/DevBlogKit.git
+cd DevBlogKit
 pip install -r requirements.txt
 ```
 
@@ -154,7 +156,7 @@ output/2026-10-18-一次-ping-到底走了多少层/
 ## 项目结构
 
 ```
-blog-pipeline/
+DevBlogKit/
 ├── run.py                     # 命令行入口
 ├── start_web.py               # 网页入口
 ├── config.yaml                # 全部配置
